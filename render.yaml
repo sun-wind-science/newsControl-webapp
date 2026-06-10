@@ -37,8 +37,6 @@ services:
         value: openai
       - key: AI_MODEL
         value: gpt-4o-mini
-      - key: OPENAI_API_KEY
-        sync: false
       - key: CORS_ORIGINS
         value: http://localhost:3000,http://127.0.0.1:3000
 
