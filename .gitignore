@@ -1,0 +1,17 @@
+.env
+node_modules/
+.next/
+dist/
+build/
+__pycache__/
+*.pyc
+.venv/
+*.log
+.pytest_cache/
+.mypy_cache/
+*.db
+work/
+outputs/
+postgres_data/
+minio_data/
+meili_data/
