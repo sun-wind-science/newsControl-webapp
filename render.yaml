@@ -52,11 +52,8 @@ services:
     buildCommand: npm ci && npm run build
     startCommand: npm run start -- -p $PORT
     envVars:
-      - key: BACKEND_HOSTPORT
-        fromService:
-          type: web
-          name: newscontrol-backend
-          property: hostport
+      - key: SERVER_API_BASE_URL
+        value: https://newscontrol-backend.onrender.com
 
   - type: redis
     name: newscontrol-redis
