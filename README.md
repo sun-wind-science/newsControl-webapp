@@ -71,6 +71,22 @@ npm run dev
 .\scripts\start-local.ps1 -BackendPort 8001
 ```
 
+## 本地烟测
+
+后端启动后，可以运行核心流程烟测：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-local.ps1
+```
+
+如果后端运行在其他端口：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-local.ps1 -ApiBase http://localhost:8001/api
+```
+
+烟测覆盖：文本采集、保存原因/标签更新、Inbox 快判、批注、摘要草稿、Anki 草稿、任务完成、复习项生成、搜索，以及空白 PDF 上传兜底预览。
+
 ## 已实现的 MVP 主路径
 
 - 统一采集入口：链接、文本、PDF、Word、TXT/Markdown、视频文件
