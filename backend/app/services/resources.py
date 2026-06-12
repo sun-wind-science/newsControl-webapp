@@ -21,6 +21,7 @@ from app.models import (
     Tag,
     Task,
     TaskStatus,
+    Project,
 )
 
 
@@ -139,8 +140,11 @@ def set_resource_tags(db: Session, user_id: UUID, resource_id: UUID, value: str 
 def serialize_resource(resource: Resource, db: Session | None = None) -> dict:
     estimated = resource.duration // 180 if resource.duration else 20
     metadata = db.scalars(select(ResourceMetadata).where(ResourceMetadata.resource_id == resource.id).limit(1)).first() if db else None
+    project = db.get(Project, resource.project_id) if db and resource.project_id else None
     return {
         "id": str(resource.id),
+        "project_id": str(resource.project_id) if resource.project_id else None,
+        "project_name": project.name if project else None,
         "title": resource.title,
         "type": resource.type,
         "status": resource.status.value,
@@ -242,6 +246,7 @@ def create_resource(db: Session, user_id: UUID, payload) -> Resource:
     title = payload.title.strip()
     resource = Resource(
         user_id=user_id,
+        project_id=payload.project_id,
         title=title,
         type=payload.type,
         original_url=payload.original_url,
@@ -271,6 +276,7 @@ def create_capture(db: Session, user_id: UUID, payload) -> Resource:
 
     resource = Resource(
         user_id=user_id,
+        project_id=payload.project_id,
         title=title,
         type="webpage" if is_url else payload.capture_type,
         original_url=metadata.get("final_url") or (content if is_url else None),
@@ -297,6 +303,7 @@ def create_capture(db: Session, user_id: UUID, payload) -> Resource:
         Note(
             user_id=user_id,
             resource_id=resource.id,
+            project_id=resource.project_id,
             title="录入计划",
             content=f"处理目标：{payload.process_goal}\n预计时间：{payload.estimated_minutes} 分钟\n下一步：{payload.next_action}\n标签：{payload.tags or '未设置'}",
             note_type="action",
@@ -320,9 +327,10 @@ def decide_inbox(db: Session, resource: Resource, keep: bool, purpose: str, esti
         resource.archived_at = datetime.now(UTC)
         db.add(
             Note(
-                user_id=resource.user_id,
-                resource_id=resource.id,
-                title="参考存档",
+            user_id=resource.user_id,
+            resource_id=resource.id,
+            project_id=resource.project_id,
+            title="参考存档",
                 content="已作为参考资料留存，不进入今日任务台。",
                 note_type="action",
             )
@@ -349,6 +357,7 @@ def decide_inbox(db: Session, resource: Resource, keep: bool, purpose: str, esti
     task = Task(
         user_id=resource.user_id,
         resource_id=resource.id,
+        project_id=resource.project_id,
         task_type="deep_process" if purpose == "active_learning" else "preview",
         title=f"处理：{resource.title}",
         description="由 Inbox 快判生成。请在处理台完成核心价值、知识点和下一步动作。",

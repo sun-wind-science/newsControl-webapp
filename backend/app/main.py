@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes import router
 from app.core.config import get_settings
-from app.db.session import Base, engine
+from app.db.session import Base, engine, ensure_local_schema
 from app.models import *  # noqa: F401,F403
 
 app = FastAPI(title="个人内容消化平台 API", version="0.1.0")
@@ -25,6 +25,7 @@ app.add_middleware(
 def startup() -> None:
     # 本地 MVP 自动建表，正式环境仍使用 Alembic 管理迁移。
     Base.metadata.create_all(bind=engine)
+    ensure_local_schema()
 
 
 app.include_router(router)

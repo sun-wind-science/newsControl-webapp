@@ -82,6 +82,7 @@ class Resource(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=new_id)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), index=True)
     title: Mapped[str] = mapped_column(String(500), index=True)
     type: Mapped[str] = mapped_column(String(50), default="link", index=True)
     source_platform: Mapped[str | None] = mapped_column(String(120))
@@ -231,6 +232,7 @@ class ReviewItem(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(as_uuid=True), primary_key=True, default=new_id)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), index=True)
     resource_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("resources.id"), index=True)
     note_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("notes.id"), index=True)
     card_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("anki_cards.id"), index=True)

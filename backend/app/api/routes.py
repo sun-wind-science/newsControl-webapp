@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, Response, UploadFile
 from fastapi.responses import FileResponse
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.responses import fail, ok
@@ -23,7 +23,7 @@ from app.models import (
     Task,
     TaskStatus,
 )
-from app.schemas.dto import AnnotationCreate, CaptureCreate, EnergyModeIn, InboxDecision, NoteCreate, ProjectCreate, ResourceCreate, ResourceUpdate
+from app.schemas.dto import AnnotationCreate, CaptureCreate, EnergyModeIn, InboxDecision, NoteCreate, ProjectCreate, ProjectUpdate, ResourceCreate, ResourceUpdate
 from app.services.bootstrap import get_or_create_local_user
 from app.services.files import save_upload_file
 from app.services.resources import (
@@ -60,6 +60,15 @@ def owned_resource(db: Session, user_id: UUID, resource_id: UUID) -> Resource:
     return resource
 
 
+def owned_project(db: Session, user_id: UUID, project_id: UUID | None) -> Project | None:
+    if project_id is None:
+        return None
+    project = db.get(Project, project_id)
+    if not project or project.user_id != user_id:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return project
+
+
 def close_open_tasks_for_resource(db: Session, resource_id: UUID) -> None:
     tasks = db.scalars(
         select(Task).where(
@@ -70,6 +79,28 @@ def close_open_tasks_for_resource(db: Session, resource_id: UUID) -> None:
     for task in tasks:
         task.status = TaskStatus.skipped
         task.completed_at = datetime.now(UTC)
+
+
+def serialize_project(project: Project, db: Session) -> dict:
+    resource_ids = list(db.scalars(select(Resource.id).where(Resource.project_id == project.id, Resource.status != ResourceStatus.discarded)).all())
+    resource_count = db.scalar(select(func.count()).select_from(Resource).where(Resource.project_id == project.id, Resource.status != ResourceStatus.discarded)) or 0
+    note_filters = [Note.project_id == project.id]
+    if resource_ids:
+        note_filters.append(Note.resource_id.in_(resource_ids))
+    note_count = db.scalar(select(func.count()).select_from(Note).where(or_(*note_filters))) or 0
+    task_count = (
+        db.scalar(select(func.count()).select_from(Task).where(Task.project_id == project.id, Task.status.in_([TaskStatus.pending, TaskStatus.in_progress])))
+        or 0
+    )
+    return {
+        "id": str(project.id),
+        "name": project.name,
+        "description": project.description,
+        "status": project.status,
+        "resource_count": resource_count,
+        "note_count": note_count,
+        "task_count": task_count,
+    }
 
 
 @router.get("/health")
@@ -91,6 +122,7 @@ def set_energy_mode(payload: EnergyModeIn):
 @router.post("/capture")
 def capture(payload: CaptureCreate, db: Session = Depends(get_db)):
     user = local_user(db)
+    owned_project(db, user.id, payload.project_id)
     resource = create_capture(db, user.id, payload)
     return ok(resource_detail(db, resource), "已采集，请确认保存原因和处理计划")
 
@@ -100,12 +132,13 @@ def add_resource(payload: ResourceCreate, db: Session = Depends(get_db)):
     if not payload.title.strip():
         raise HTTPException(status_code=422, detail="请输入内容")
     user = local_user(db)
+    owned_project(db, user.id, payload.project_id)
     resource = create_resource(db, user.id, payload)
     return ok(serialize_resource(resource, db), "资源已进入 Inbox")
 
 
 @router.get("/resources")
-def list_resources(status: str | None = None, resource_type: str | None = None, db: Session = Depends(get_db)):
+def list_resources(status: str | None = None, resource_type: str | None = None, project_id: UUID | None = None, db: Session = Depends(get_db)):
     user = local_user(db)
     stmt = select(Resource).where(Resource.user_id == user.id).order_by(Resource.created_at.desc())
     if status:
@@ -114,6 +147,9 @@ def list_resources(status: str | None = None, resource_type: str | None = None, 
         stmt = stmt.where(Resource.status != ResourceStatus.discarded)
     if resource_type and resource_type != "all":
         stmt = stmt.where(Resource.type == resource_type)
+    if project_id:
+        owned_project(db, user.id, project_id)
+        stmt = stmt.where(Resource.project_id == project_id)
     resources = db.scalars(stmt).all()
     return ok([serialize_resource(item, db) for item in resources])
 
@@ -152,6 +188,10 @@ def update_resource(resource_id: UUID, payload: ResourceUpdate, db: Session = De
                 value = ResourceStatus(value)
             except ValueError:
                 raise HTTPException(status_code=422, detail="资源状态不支持") from None
+        if key == "project_id":
+            owned_project(db, user.id, value)
+            resource.project_id = value
+            continue
         if key == "tags":
             set_resource_tags(db, user.id, resource.id, value)
             continue
@@ -245,6 +285,7 @@ def create_annotation(resource_id: UUID, payload: AnnotationCreate, db: Session 
     note = Note(
         user_id=user.id,
         resource_id=resource.id,
+        project_id=resource.project_id,
         title=payload.title or annotation_title(payload.note_type),
         content=payload.content,
         note_type=payload.note_type,
@@ -266,6 +307,7 @@ def complete_resource_process(resource_id: UUID, db: Session = Depends(get_db)):
         ReviewItem(
             user_id=user.id,
             resource_id=resource.id,
+            project_id=resource.project_id,
             review_type="active_recall",
             prompt=f"复述：{resource.title} 的核心价值是什么？",
             next_review_at=datetime.now(UTC) + timedelta(days=1),
@@ -333,6 +375,7 @@ def generate_anki(resource_id: UUID, db: Session = Depends(get_db)):
     card = AnkiCard(
         user_id=user.id,
         resource_id=resource.id,
+        project_id=resource.project_id,
         front=f"{resource.title} 的核心价值是什么？",
         back=resource.summary or "等待你在处理台中补全。",
         tags=f"{resource.type} 自动生成",
@@ -381,6 +424,7 @@ def complete_task(task_id: UUID, db: Session = Depends(get_db)):
                     ReviewItem(
                         user_id=user.id,
                         resource_id=resource.id,
+                        project_id=resource.project_id,
                         review_type="active_recall",
                         prompt=f"复述：{resource.title} 的核心价值、一个证据点和下一步动作是什么？",
                         next_review_at=datetime.now(UTC) + timedelta(days=1),
@@ -393,6 +437,10 @@ def complete_task(task_id: UUID, db: Session = Depends(get_db)):
 @router.post("/notes")
 def create_note(payload: NoteCreate, db: Session = Depends(get_db)):
     user = local_user(db)
+    if payload.resource_id:
+        owned_resource(db, user.id, payload.resource_id)
+    if payload.project_id:
+        owned_project(db, user.id, payload.project_id)
     note = Note(user_id=user.id, **payload.model_dump())
     db.add(note)
     db.commit()
@@ -403,16 +451,63 @@ def create_note(payload: NoteCreate, db: Session = Depends(get_db)):
 def list_projects(db: Session = Depends(get_db)):
     user = local_user(db)
     projects = db.scalars(select(Project).where(Project.user_id == user.id).order_by(Project.created_at.desc())).all()
-    return ok([{"id": str(item.id), "name": item.name, "description": item.description, "status": item.status} for item in projects])
+    return ok([serialize_project(item, db) for item in projects])
 
 
 @router.post("/projects")
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db)):
     user = local_user(db)
+    if not payload.name.strip():
+        raise HTTPException(status_code=422, detail="项目名称不能为空")
     project = Project(user_id=user.id, name=payload.name, description=payload.description)
     db.add(project)
     db.commit()
-    return ok({"id": str(project.id)}, "项目已创建")
+    db.refresh(project)
+    return ok(serialize_project(project, db), "项目已创建")
+
+
+@router.get("/projects/{project_id}")
+def get_project(project_id: UUID, db: Session = Depends(get_db)):
+    user = local_user(db)
+    project = owned_project(db, user.id, project_id)
+    resources = db.scalars(
+        select(Resource)
+        .where(Resource.user_id == user.id, Resource.project_id == project.id, Resource.status != ResourceStatus.discarded)
+        .order_by(Resource.last_touched_at.desc())
+    ).all()
+    note_filters = [Note.project_id == project.id]
+    if resources:
+        note_filters.append(Note.resource_id.in_([item.id for item in resources]))
+    notes = db.scalars(select(Note).where(Note.user_id == user.id, or_(*note_filters)).order_by(Note.created_at.desc()).limit(20)).all()
+    tasks = db.scalars(
+        select(Task)
+        .where(Task.user_id == user.id, Task.project_id == project.id, Task.status.in_([TaskStatus.pending, TaskStatus.in_progress]))
+        .order_by(*task_order())
+    ).all()
+    return ok(
+        {
+            "project": serialize_project(project, db),
+            "resources": [serialize_resource(item, db) for item in resources],
+            "notes": [serialize_note(item) for item in notes],
+            "tasks": [serialize_task(item) for item in tasks],
+        }
+    )
+
+
+@router.patch("/projects/{project_id}")
+def update_project(project_id: UUID, payload: ProjectUpdate, db: Session = Depends(get_db)):
+    user = local_user(db)
+    project = owned_project(db, user.id, project_id)
+    for key, value in payload.model_dump(exclude_unset=True).items():
+        if key == "name" and value is not None:
+            value = value.strip()
+            if not value:
+                raise HTTPException(status_code=422, detail="项目名称不能为空")
+        if value is not None:
+            setattr(project, key, value)
+    db.commit()
+    db.refresh(project)
+    return ok(serialize_project(project, db), "项目已更新")
 
 
 @router.get("/reviews/today")

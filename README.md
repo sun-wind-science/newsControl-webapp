@@ -85,7 +85,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-local.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-local.ps1 -ApiBase http://localhost:8001/api
 ```
 
-烟测覆盖：文本采集、保存原因/标签更新、空标题/空保存原因拒绝、Inbox 快判、延后后暂时隐藏、归档后关闭待处理任务、放弃后从默认资源库隐藏、批注、摘要草稿、Anki 草稿、任务完成、复习项生成、搜索，以及空白 PDF 上传兜底预览。
+烟测覆盖：文本采集、项目创建与项目归属、项目详情聚合、保存原因/标签更新、空标题/空保存原因拒绝、Inbox 快判、延后后暂时隐藏、归档后关闭待处理任务、放弃后从默认资源库隐藏、批注、摘要草稿、Anki 草稿、任务完成、复习项生成、搜索，以及空白 PDF 上传兜底预览。
 
 ## 已实现的 MVP 主路径
 
@@ -99,7 +99,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-local.ps1 -A
 - 资源详情：桌面三栏，移动端内容/批注/信息/输出 tabs，可编辑资源信息和批注
 - 处理台：锁定单任务，阅读/观看资源，保存处理输出，完成后生成复习项
 - 输出草稿：本地 mock 摘要草稿、Anki 草稿，默认需要人工确认
-- 项目空间：极简创建项目
+- 项目空间：创建项目、采集/详情指定资源归属、按项目筛资源、聚合项目资源/批注/任务
 - 复习页：主动复述与熟悉度记录
 - 搜索页：关键词搜索标题、保存原因、标签、正文片段和批注
 - 后端统一返回格式：`{success, data, message}`

@@ -15,16 +15,15 @@ def get_or_create_local_user(db: Session) -> User:
     db.add(user)
     db.flush()
     db.add(UserSettings(user_id=user.id))
-    db.add_all(
-        [
-            Project(user_id=user.id, name="理论物理期末复习", description="课程、视频、PDF 和 Anki 的沉淀空间"),
-            Project(user_id=user.id, name="智能护膜答辩", description="论文、竞品、数据证据与答辩素材"),
-        ]
-    )
+    physics_project = Project(user_id=user.id, name="理论物理期末复习", description="课程、视频、PDF 和 Anki 的沉淀空间")
+    defense_project = Project(user_id=user.id, name="智能护膜答辩", description="论文、竞品、数据证据与答辩素材")
+    db.add_all([physics_project, defense_project])
+    db.flush()
 
     resources = [
         Resource(
             user_id=user.id,
+            project_id=physics_project.id,
             title="非线性光学导论第 3 讲：二阶效应",
             type="video",
             source_platform="Bilibili",
@@ -35,6 +34,7 @@ def get_or_create_local_user(db: Session) -> User:
         ),
         Resource(
             user_id=user.id,
+            project_id=defense_project.id,
             title="表面等离激元增强材料综述",
             type="pdf",
             source_platform="arXiv",
@@ -45,6 +45,7 @@ def get_or_create_local_user(db: Session) -> User:
         ),
         Resource(
             user_id=user.id,
+            project_id=physics_project.id,
             title="ChatGPT 式学习工作流复盘",
             type="article",
             source_platform="网页",

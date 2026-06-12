@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator
 class ResourceCreate(BaseModel):
     title: str = Field(min_length=1, max_length=500)
     type: str = "link"
+    project_id: UUID | None = None
     original_url: str | None = None
     source_platform: str | None = None
     summary: str | None = None
@@ -25,6 +26,7 @@ class CaptureCreate(BaseModel):
     title: str | None = None
     summary: str | None = None
     source_platform: str | None = None
+    project_id: UUID | None = None
     process_goal: str = "学习"
     estimated_minutes: int = 20
     priority: int = 3
@@ -41,6 +43,7 @@ class CaptureCreate(BaseModel):
 
 class ResourceUpdate(BaseModel):
     title: str | None = None
+    project_id: UUID | None = None
     status: str | None = None
     decay_status: str | None = None
     summary: str | None = None
@@ -94,6 +97,12 @@ class TaskOut(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     description: str | None = None
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    status: str | None = None
 
 
 class NoteCreate(BaseModel):

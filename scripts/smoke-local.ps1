@@ -28,11 +28,19 @@ Write-Host "API: $ApiBase"
 $health = Invoke-RestMethod -Method Get -Uri "$ApiBase/health"
 Assert-True $health.success "health check failed"
 
+$project = Post-Json "$ApiBase/projects" @{
+  name = "smoke-project"
+  description = "verify project ownership and aggregation"
+}
+Assert-True $project.success "project creation failed"
+$projectId = $project.data.id
+
 $capturePayload = @{
   content = "smoke text: capture triage process review search"
   capture_type = "text"
   title = "smoke-loop-resource"
   summary = "verify summary annotations and processing output"
+  project_id = $projectId
   process_goal = "learning"
   estimated_minutes = 30
   priority = 4
@@ -42,15 +50,18 @@ $capturePayload = @{
 $capture = Post-Json "$ApiBase/capture" $capturePayload
 Assert-True $capture.success "text capture failed"
 $resourceId = $capture.data.resource.id
+Assert-True ($capture.data.resource.project_id -eq $projectId) "capture did not attach project"
 
 $updatePayload = @{
   summary = "updated smoke reason: should be searchable and reviewable"
   tags = "smoke loop regression"
+  project_id = $projectId
   estimated_minutes = 30
   priority = 4
 }
 $updated = Invoke-RestMethod -Method Patch -Uri "$ApiBase/resources/$resourceId" -ContentType "application/json; charset=utf-8" -Body ($updatePayload | ConvertTo-Json -Depth 8)
 Assert-True ($updated.data.tags.Count -ge 1) "tags were not saved"
+Assert-True ($updated.data.project_id -eq $projectId) "project was not saved on resource"
 
 $blankTitleRejected = $false
 try {
@@ -97,6 +108,12 @@ $detail = Invoke-RestMethod -Method Get -Uri "$ApiBase/resources/$resourceId"
 Assert-True ($detail.data.notes.Count -ge 1) "detail missing annotations"
 Assert-True ($detail.data.ai_outputs.Count -ge 1) "detail missing summary draft"
 Assert-True ($detail.data.anki_cards.Count -ge 1) "detail missing Anki draft"
+Assert-True ($detail.data.resource.project_name -eq "smoke-project") "detail missing project name"
+
+$projectDetail = Invoke-RestMethod -Method Get -Uri "$ApiBase/projects/$projectId"
+$projectHasResource = @($projectDetail.data.resources | Where-Object { $_.id -eq $resourceId }).Count -gt 0
+Assert-True $projectHasResource "project detail missing attached resource"
+Assert-True ($projectDetail.data.notes.Count -ge 1) "project detail missing resource annotations"
 
 $search = Invoke-RestMethod -Method Get -Uri "$ApiBase/search?q=regression"
 Assert-True ($search.data.Count -ge 1) "search did not hit tag or reason"
@@ -175,4 +192,4 @@ if (Test-Path $backendPython) {
   Assert-True ($pdfDetail.data.chunks.Count -ge 1) "PDF preview chunk missing"
 }
 
-Write-Host "Smoke passed: capture, triage, annotation, processing, review, search and PDF upload are OK."
+Write-Host "Smoke passed: capture, project aggregation, triage, annotation, processing, review, search and PDF upload are OK."

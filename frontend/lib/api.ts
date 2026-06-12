@@ -6,6 +6,8 @@ export type ApiResponse<T> = {
 
 export type Resource = {
   id: string;
+  project_id?: string;
+  project_name?: string;
   title: string;
   type: string;
   status: string;
@@ -73,6 +75,23 @@ export type ResourceDetail = {
   anki_cards: Array<{ id: string; front: string; back: string; tags?: string; exported: boolean; created_at: string }>;
 };
 
+export type Project = {
+  id: string;
+  name: string;
+  description?: string;
+  status: string;
+  resource_count: number;
+  note_count: number;
+  task_count: number;
+};
+
+export type ProjectDetail = {
+  project: Project;
+  resources: Resource[];
+  notes: Note[];
+  tasks: Task[];
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -110,6 +129,7 @@ export const api = {
     estimated_minutes?: number;
     priority?: number;
     tags?: string;
+    project_id?: string;
     next_action?: string;
   }) => request<ResourceDetail>("/capture", { method: "POST", body: JSON.stringify(payload) }),
   uploadFile: (file: File) => {
@@ -117,15 +137,16 @@ export const api = {
     form.append("file", file);
     return request<ResourceDetail>("/uploads/file", { method: "POST", body: form });
   },
-  resources: (status?: string, resourceType?: string) => {
+  resources: (status?: string, resourceType?: string, projectId?: string) => {
     const params = new URLSearchParams();
     if (status) params.set("status", status);
     if (resourceType && resourceType !== "all") params.set("resource_type", resourceType);
+    if (projectId) params.set("project_id", projectId);
     const query = params.toString();
     return request<Resource[]>(`/resources${query ? `?${query}` : ""}`);
   },
   resourceDetail: (id: string) => request<ResourceDetail>(`/resources/${id}`),
-  updateResource: (id: string, payload: Partial<Pick<Resource, "title" | "summary" | "status" | "type" | "source_platform" | "original_url" | "estimated_minutes" | "heat_score">> & { tags?: string; priority?: number }) =>
+  updateResource: (id: string, payload: Partial<Omit<Pick<Resource, "title" | "summary" | "status" | "type" | "source_platform" | "original_url" | "estimated_minutes" | "heat_score" | "project_id">, "project_id">> & { tags?: string; priority?: number; project_id?: string | null }) =>
     request<Resource>(`/resources/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   archiveResource: (id: string) => request<Resource>(`/resources/${id}/archive`, { method: "POST", body: "{}" }),
   discardResource: (id: string) => request<{ id: string }>(`/resources/${id}/discard`, { method: "POST", body: "{}" }),
@@ -140,8 +161,11 @@ export const api = {
   completeTask: (id: string) => request<{ id: string }>(`/tasks/${id}/complete`, { method: "POST", body: "{}" }),
   summarize: (id: string) => request<any>(`/resources/${id}/summarize`, { method: "POST", body: "{}" }),
   generateAnki: (id: string) => request<any>(`/resources/${id}/generate-anki`, { method: "POST", body: "{}" }),
-  projects: () => request<any[]>("/projects"),
-  createProject: (payload: { name: string; description?: string }) => request<any>("/projects", { method: "POST", body: JSON.stringify(payload) }),
+  projects: () => request<Project[]>("/projects"),
+  projectDetail: (id: string) => request<ProjectDetail>(`/projects/${id}`),
+  createProject: (payload: { name: string; description?: string }) => request<Project>("/projects", { method: "POST", body: JSON.stringify(payload) }),
+  updateProject: (id: string, payload: Partial<Pick<Project, "name" | "description" | "status">>) =>
+    request<Project>(`/projects/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   reviews: () => request<any[]>("/reviews/today"),
   completeReview: (id: string, quality: string) => request<any>(`/reviews/${id}/complete?quality=${quality}`, { method: "POST", body: "{}" }),
   search: (q: string) => request<any[]>(`/search?q=${encodeURIComponent(q)}`)
