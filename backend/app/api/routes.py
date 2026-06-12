@@ -139,6 +139,19 @@ def update_resource(resource_id: UUID, payload: ResourceUpdate, db: Session = De
     user = local_user(db)
     resource = owned_resource(db, user.id, resource_id)
     for key, value in payload.model_dump(exclude_unset=True).items():
+        if key == "title" and value is not None:
+            value = value.strip()
+            if not value:
+                raise HTTPException(status_code=422, detail="标题不能为空")
+        if key == "summary" and value is not None:
+            value = value.strip()
+            if not value:
+                raise HTTPException(status_code=422, detail="请填写保存原因")
+        if key == "status" and value is not None:
+            try:
+                value = ResourceStatus(value)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="资源状态不支持") from None
         if key == "tags":
             set_resource_tags(db, user.id, resource.id, value)
             continue

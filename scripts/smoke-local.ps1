@@ -52,6 +52,24 @@ $updatePayload = @{
 $updated = Invoke-RestMethod -Method Patch -Uri "$ApiBase/resources/$resourceId" -ContentType "application/json; charset=utf-8" -Body ($updatePayload | ConvertTo-Json -Depth 8)
 Assert-True ($updated.data.tags.Count -ge 1) "tags were not saved"
 
+$blankTitleRejected = $false
+try {
+  $blankTitlePayload = @{ title = "   " } | ConvertTo-Json -Depth 8
+  Invoke-RestMethod -Method Patch -Uri "$ApiBase/resources/$resourceId" -ContentType "application/json; charset=utf-8" -Body $blankTitlePayload | Out-Null
+} catch {
+  $blankTitleRejected = $true
+}
+Assert-True $blankTitleRejected "blank title update was not rejected"
+
+$blankSummaryRejected = $false
+try {
+  $blankSummaryPayload = @{ summary = "   " } | ConvertTo-Json -Depth 8
+  Invoke-RestMethod -Method Patch -Uri "$ApiBase/resources/$resourceId" -ContentType "application/json; charset=utf-8" -Body $blankSummaryPayload | Out-Null
+} catch {
+  $blankSummaryRejected = $true
+}
+Assert-True $blankSummaryRejected "blank summary update was not rejected"
+
 $decision = Post-Json "$ApiBase/inbox/$resourceId/decide" @{
   keep = $true
   purpose = "active_learning"
