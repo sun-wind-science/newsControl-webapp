@@ -80,12 +80,22 @@ def extract_chunks(db: Session, resource: Resource, path: Path, resource_type: s
 def extract_pdf_chunks(db: Session, resource: Resource, path: Path) -> None:
     try:
         reader = PdfReader(str(path))
+        extracted_count = 0
         for index, page in enumerate(reader.pages):
             text = (page.extract_text() or "").strip()
             if text:
+                extracted_count += 1
                 db.add(ResourceChunk(resource_id=resource.id, chunk_index=index, chunk_type="pdf_text", content=text[:8000], page_number=index + 1, heading=f"第 {index + 1} 页"))
-        if not reader.pages:
-            db.add(ResourceChunk(resource_id=resource.id, chunk_index=0, chunk_type="pdf_text", content="PDF 已保存，但没有提取到文本。", heading="PDF"))
+        if not reader.pages or extracted_count == 0:
+            db.add(
+                ResourceChunk(
+                    resource_id=resource.id,
+                    chunk_index=0,
+                    chunk_type="pdf_text",
+                    content="PDF 已保存，但没有提取到可复制文本。它可能是扫描件或图片型 PDF；你仍然可以下载原文件、写页码批注并送入处理台。",
+                    heading="PDF 预览",
+                )
+            )
     except Exception as exc:
         db.add(ResourceChunk(resource_id=resource.id, chunk_index=0, chunk_type="pdf_text", content=f"PDF 已保存，但文本提取失败：{exc}", heading="PDF 解析"))
 
