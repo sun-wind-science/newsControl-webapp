@@ -14,6 +14,7 @@ export type Resource = {
   original_url?: string;
   file_url?: string;
   summary?: string;
+  tags: string[];
   heat_score: number;
   estimated_minutes: number;
   created_at: string;
@@ -121,7 +122,7 @@ export const api = {
     return request<Resource[]>(`/resources${query ? `?${query}` : ""}`);
   },
   resourceDetail: (id: string) => request<ResourceDetail>(`/resources/${id}`),
-  updateResource: (id: string, payload: Partial<Pick<Resource, "title" | "summary" | "status" | "type" | "source_platform">>) =>
+  updateResource: (id: string, payload: Partial<Pick<Resource, "title" | "summary" | "status" | "type" | "source_platform" | "original_url" | "estimated_minutes" | "heat_score">> & { tags?: string; priority?: number }) =>
     request<Resource>(`/resources/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
   createAnnotation: (id: string, payload: { note_type: string; content: string; source_range?: string; title?: string }) =>
     request<Note>(`/resources/${id}/annotations`, { method: "POST", body: JSON.stringify(payload) }),

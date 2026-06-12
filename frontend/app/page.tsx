@@ -84,7 +84,7 @@ function Shell() {
   return (
     <main className="flex min-h-screen min-w-0 flex-col bg-paper text-ink md:flex-row">
       <aside
-        className={`order-2 shrink-0 border-t border-line bg-white transition-all md:order-1 md:flex md:flex-col md:border-r md:border-t-0 md:py-4 ${
+        className={`fixed inset-x-0 bottom-0 z-40 shrink-0 border-t border-line bg-white transition-all md:static md:order-1 md:flex md:flex-col md:border-r md:border-t-0 md:py-4 ${
           sidebarOpen ? "md:w-[220px]" : "md:w-[74px] md:hover:w-[220px]"
         }`}
       >
@@ -306,26 +306,73 @@ function CapturePanel({ navigate, showToast }: { navigate: (view: string, id?: s
 
 function CaptureConfirmCard({ detail, navigate, showToast }: { detail: ResourceDetail; navigate: (view: string, id?: string) => void; showToast: (message: string) => void }) {
   const qc = useQueryClient();
+  const { setSelectedTaskId } = useAppStore();
   const [title, setTitle] = useState(detail.resource.title);
   const [summary, setSummary] = useState(detail.resource.summary || "");
-  const update = useMutation({
-    mutationFn: () => api.updateResource(detail.resource.id, { title, summary }),
-    onSuccess: async () => {
-      await qc.invalidateQueries();
-      showToast("确认卡已保存");
-      navigate("resource", detail.resource.id);
+  const [goal, setGoal] = useState("active_learning");
+  const [minutes, setMinutes] = useState(detail.resource.estimated_minutes || 30);
+  const [priority, setPriority] = useState(Math.max(2, Math.min(4, Math.round(detail.resource.heat_score || 3))));
+  const [tags, setTags] = useState((detail.resource.tags ?? []).join(" "));
+  const [saving, setSaving] = useState(false);
+
+  async function saveThen(action: "detail" | "process" | "reference") {
+    if (!summary.trim() || summary.includes("请补充")) {
+      showToast("请先写清楚为什么保存它");
+      return;
     }
-  });
+    setSaving(true);
+    try {
+      await api.updateResource(detail.resource.id, { title: title.trim(), summary: summary.trim(), estimated_minutes: minutes, priority, tags });
+      if (action === "process") {
+        const result = await api.decideInbox(detail.resource.id, { keep: true, purpose: goal, estimated_minutes: minutes });
+        setSelectedTaskId(result.task_id);
+        showToast("已确认并生成处理任务");
+        navigate("processing");
+      } else if (action === "reference") {
+        await api.decideInbox(detail.resource.id, { keep: true, purpose: "reference", estimated_minutes: minutes });
+        showToast("已作为参考资料留存");
+        navigate("resources");
+      } else {
+        showToast("确认卡已保存，可以继续批注");
+        navigate("resource", detail.resource.id);
+      }
+      await qc.invalidateQueries();
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "确认失败");
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="mt-4 rounded-md border border-accent bg-paper p-4">
-      <div className="mb-3 font-semibold">录入确认卡</div>
+      <div className="mb-3">
+        <div className="font-semibold">录入确认 + 快判</div>
+        <p className="mt-1 text-[13px] text-muted">先把“这是什么、为什么保存、多久处理”补齐，再决定去向。</p>
+      </div>
       <div className="grid gap-3 md:grid-cols-2">
-        <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 rounded-md border border-line px-3" />
-        <input value={summary} onChange={(e) => setSummary(e.target.value)} className="h-11 rounded-md border border-line px-3" placeholder="为什么保存它？" />
+        <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 rounded-md border border-line px-3" placeholder="标题" />
+        <input value={tags} onChange={(e) => setTags(e.target.value)} className="h-11 rounded-md border border-line px-3" placeholder="标签：论文 英语 项目A" />
+        <textarea value={summary} onChange={(e) => setSummary(e.target.value)} className="min-h-[92px] rounded-md border border-line p-3 md:col-span-2" placeholder="为什么保存它？后面再看时，你希望自己立刻明白什么？" />
+        <select value={goal} onChange={(e) => setGoal(e.target.value)} className="h-11 rounded-md border border-line bg-white px-3">
+          <option value="active_learning">深处理：学习/论文/答辩素材</option>
+          <option value="preview">速看：先判断价值</option>
+        </select>
+        <select value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} className="h-11 rounded-md border border-line bg-white px-3">
+          <option value={10}>10 分钟速看</option>
+          <option value={30}>30 分钟处理</option>
+          <option value={60}>1 小时+</option>
+        </select>
+        <select value={priority} onChange={(e) => setPriority(Number(e.target.value))} className="h-11 rounded-md border border-line bg-white px-3">
+          <option value={2}>低优先级</option>
+          <option value={3}>中优先级</option>
+          <option value={4}>高优先级</option>
+        </select>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
-        <button onClick={() => update.mutate()} className="rounded-md bg-ink px-4 py-2 text-white">保存并查看详情</button>
-        <button onClick={() => navigate("inbox")} className="rounded-md border border-line px-4 py-2">去 Inbox 快判</button>
+        <button disabled={saving} onClick={() => saveThen("process")} className="rounded-md bg-ink px-4 py-2 text-white disabled:opacity-60">确认并进入处理</button>
+        <button disabled={saving} onClick={() => saveThen("detail")} className="rounded-md border border-line px-4 py-2 disabled:opacity-60">先打开详情批注</button>
+        <button disabled={saving} onClick={() => saveThen("reference")} className="rounded-md border border-line px-4 py-2 disabled:opacity-60">只作参考留存</button>
       </div>
     </div>
   );
@@ -369,23 +416,42 @@ function InboxView({ navigate, showToast }: { navigate: (view: string, id?: stri
 
 function ResourceLibrary({ navigate }: { navigate: (view: string, id?: string) => void }) {
   const [type, setType] = useState("all");
-  const { data, isLoading } = useQuery({ queryKey: ["resources", type], queryFn: () => api.resources(undefined, type), placeholderData: keepPreviousData });
+  const [status, setStatus] = useState("");
+  const [q, setQ] = useState("");
+  const { data, isLoading } = useQuery({ queryKey: ["resources", type, status], queryFn: () => api.resources(status || undefined, type), placeholderData: keepPreviousData });
+  const filtered = (data ?? []).filter((resource) => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return true;
+    return [resource.title, resource.summary, resource.source_platform, resource.original_url, ...(resource.tags ?? [])].filter(Boolean).join(" ").toLowerCase().includes(needle);
+  });
   if (isLoading && !data) return <Loading />;
   return (
     <div className="mx-auto grid max-w-7xl gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="font-serif text-[28px]">资源库</h1>
-        <select value={type} onChange={(e) => setType(e.target.value)} className="h-10 rounded-md border border-line bg-white px-3">
-          <option value="all">全部类型</option>
-          <option value="webpage">网页</option>
-          <option value="text">文本</option>
-          <option value="pdf">PDF</option>
-          <option value="word">Word</option>
-          <option value="video">视频</option>
-        </select>
+        <div className="grid w-full gap-2 sm:w-auto sm:grid-cols-[180px_160px_240px]">
+          <select value={type} onChange={(e) => setType(e.target.value)} className="h-10 min-w-0 rounded-md border border-line bg-white px-3">
+            <option value="all">全部类型</option>
+            <option value="webpage">网页</option>
+            <option value="text">文本</option>
+            <option value="pdf">PDF</option>
+            <option value="word">Word</option>
+            <option value="video">视频</option>
+          </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value)} className="h-10 min-w-0 rounded-md border border-line bg-white px-3">
+            <option value="">全部状态</option>
+            <option value="inbox">Inbox</option>
+            <option value="to_preview">速看</option>
+            <option value="to_process">深处理</option>
+            <option value="reviewing">复习中</option>
+            <option value="archived">归档</option>
+          </select>
+          <input value={q} onChange={(e) => setQ(e.target.value)} className="h-10 min-w-0 rounded-md border border-line bg-white px-3" placeholder="筛标题、原因、标签" />
+        </div>
       </div>
       <div className="grid gap-3 lg:grid-cols-2">
-        {data?.map((resource) => <ResourceCard key={resource.id} resource={resource} onOpen={() => navigate("resource", resource.id)} />)}
+        {filtered.map((resource) => <ResourceCard key={resource.id} resource={resource} onOpen={() => navigate("resource", resource.id)} />)}
+        {!filtered.length && <Empty title="没有匹配资源" action="换一个筛选条件，或先从工作台采集新资源。" />}
       </div>
     </div>
   );
@@ -408,7 +474,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
     onError: (error) => showToast(error instanceof Error ? error.message : "批注失败")
   });
   const update = useMutation({
-    mutationFn: (payload: Partial<Resource>) => api.updateResource(resourceId, payload),
+    mutationFn: (payload: Parameters<typeof api.updateResource>[1]) => api.updateResource(resourceId, payload),
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["resource", resourceId] });
       showToast("资源已更新");
@@ -422,9 +488,30 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
         <div className="mb-3 font-semibold">资源信息</div>
         <input className="mb-2 h-10 w-full rounded-md border border-line px-3" defaultValue={resource.title} onBlur={(e) => e.target.value !== resource.title && update.mutate({ title: e.target.value })} />
         <textarea className="mb-2 min-h-[100px] w-full rounded-md border border-line p-3" defaultValue={resource.summary || ""} placeholder="为什么保存它？" onBlur={(e) => e.target.value !== resource.summary && update.mutate({ summary: e.target.value })} />
+        <input className="mb-2 h-10 w-full rounded-md border border-line px-3" defaultValue={(resource.tags ?? []).join(" ")} placeholder="标签，用空格分隔" onBlur={(e) => update.mutate({ tags: e.target.value })} />
+        <select className="mb-2 h-10 w-full rounded-md border border-line bg-white px-3" defaultValue={resource.status} onChange={(e) => update.mutate({ status: e.target.value })}>
+          <option value="inbox">Inbox 待判</option>
+          <option value="to_preview">速看</option>
+          <option value="to_process">深处理</option>
+          <option value="processing">处理中</option>
+          <option value="reviewing">复习中</option>
+          <option value="archived">已归档</option>
+          <option value="discarded">已放弃</option>
+        </select>
+        <div className="mb-2 grid grid-cols-2 gap-2">
+          <select className="h-10 rounded-md border border-line bg-white px-3" defaultValue={resource.estimated_minutes} onChange={(e) => update.mutate({ estimated_minutes: Number(e.target.value) })}>
+            <option value={10}>10 分钟</option>
+            <option value={30}>30 分钟</option>
+            <option value={60}>1 小时+</option>
+          </select>
+          <select className="h-10 rounded-md border border-line bg-white px-3" defaultValue={Math.max(2, Math.min(4, Math.round(resource.heat_score || 3)))} onChange={(e) => update.mutate({ priority: Number(e.target.value) })}>
+            <option value={2}>低优先级</option>
+            <option value={3}>中优先级</option>
+            <option value={4}>高优先级</option>
+          </select>
+        </div>
         <InfoLine label="类型" value={resource.type} />
         <InfoLine label="来源" value={resource.source_platform || resource.original_url || "本地"} />
-        <InfoLine label="状态" value={resource.status} />
         <InfoLine label="最近触碰" value={new Date(resource.last_touched_at).toLocaleString()} />
         {data.files[0] && <a className="mt-3 block rounded-md border border-line px-3 py-2 text-[14px] hover:bg-panel" href={data.files[0].download_url} target="_blank">打开/下载文件</a>}
       </aside>
@@ -476,13 +563,30 @@ function ProcessingDesk({ navigate, showToast }: { navigate: (view: string, id?:
   const qc = useQueryClient();
   const { selectedTaskId, setSelectedTaskId } = useAppStore();
   const { data: tasks } = useQuery({ queryKey: ["tasks"], queryFn: api.tasks, placeholderData: keepPreviousData });
+  const [processOutput, setProcessOutput] = useState("");
   const task = useMemo(() => {
     const pending = (tasks ?? []).filter((item) => item.status === "pending");
     return pending.find((item) => item.id === selectedTaskId) ?? pending[0];
   }, [selectedTaskId, tasks]);
+  const { data: detail } = useQuery({
+    queryKey: ["processing-resource", task?.resource_id],
+    queryFn: () => api.resourceDetail(task!.resource_id!),
+    enabled: Boolean(task?.resource_id),
+    placeholderData: keepPreviousData
+  });
   const complete = useMutation({
-    mutationFn: (id: string) => api.completeTask(id),
+    mutationFn: async (id: string) => {
+      if (task?.resource_id && processOutput.trim()) {
+        await api.createAnnotation(task.resource_id, {
+          note_type: "project_material",
+          title: "处理台输出",
+          content: processOutput.trim()
+        });
+      }
+      return api.completeTask(id);
+    },
     onSuccess: async () => {
+      setProcessOutput("");
       await qc.invalidateQueries();
       showToast("任务完成，已进入复习沉淀");
     }
@@ -499,9 +603,27 @@ function ProcessingDesk({ navigate, showToast }: { navigate: (view: string, id?:
           <span>P{task.priority}</span>
         </div>
       </header>
-      <section className="grid gap-4 lg:grid-cols-[1fr_360px]">
-        <div className="rounded-md border border-line bg-white p-4">
-          <textarea className="h-[360px] w-full resize-none rounded-md border border-line bg-paper p-4" placeholder="写一句核心价值、3 个知识点、1 个疑问，以及下一步动作。" />
+      <section className="grid gap-4 lg:grid-cols-[1fr_380px]">
+        <div className="grid gap-4">
+          <div className="rounded-md border border-line bg-white p-4">
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="font-semibold">当前资源</h2>
+              {task.resource_id && <button onClick={() => navigate("resource", task.resource_id)} className="rounded-md border border-line px-3 py-2 text-[13px]">详情/批注</button>}
+            </div>
+            {detail?.resource.type === "video" && detail.files[0] ? <video className="mb-4 max-h-[340px] w-full rounded-md bg-black" src={detail.files[0].download_url} controls /> : null}
+            <div className="grid max-h-[460px] gap-3 overflow-y-auto pr-1">
+              {detail?.chunks.length ? detail.chunks.slice(0, 8).map((chunk) => (
+                <article key={chunk.id} className="rounded-md border border-line bg-paper p-3">
+                  <div className="mb-1 font-mono text-[12px] text-accent">{chunk.heading || chunk.chunk_type}{chunk.page_number ? ` · 第 ${chunk.page_number} 页` : ""}</div>
+                  <p className="whitespace-pre-wrap break-words text-[14px] leading-6">{chunk.content}</p>
+                </article>
+              )) : <Empty title="暂无可预览内容" action="可以先根据标题、来源和保存原因写处理判断。" />}
+            </div>
+          </div>
+          <div className="rounded-md border border-line bg-white p-4">
+            <h2 className="mb-3 font-semibold">本轮处理输出</h2>
+            <textarea value={processOutput} onChange={(e) => setProcessOutput(e.target.value)} className="h-[260px] w-full resize-none rounded-md border border-line bg-paper p-4" placeholder="写一句核心价值、3 个知识点、1 个疑问，以及下一步动作。完成任务时会保存为批注/项目素材。" />
+          </div>
         </div>
         <div className="rounded-md border border-line bg-white p-4">
           <h2 className="font-semibold">完成标准</h2>
@@ -515,6 +637,14 @@ function ProcessingDesk({ navigate, showToast }: { navigate: (view: string, id?:
             {task.resource_id && <button onClick={() => navigate("resource", task.resource_id)} className="rounded-md border border-line px-4 py-2">打开资源详情</button>}
             <button onClick={() => complete.mutate(task.id)} className="rounded-md bg-success px-4 py-2 text-white">标记完成</button>
           </div>
+          {detail?.notes.length ? (
+            <div className="mt-5">
+              <h3 className="mb-2 text-[14px] font-semibold">已有批注</h3>
+              <div className="grid gap-2">
+                {detail.notes.slice(0, 4).map((note) => <div key={note.id} className="rounded-md bg-panel p-3 text-[13px]"><div className="font-semibold">{note.title}</div><p className="mt-1 break-words text-muted">{note.content}</p></div>)}
+              </div>
+            </div>
+          ) : null}
         </div>
       </section>
       <TaskList tasks={tasks ?? []} onPick={(item) => setSelectedTaskId(item.id)} emptyText="暂无任务。" />
@@ -609,6 +739,10 @@ function ResourceCard({ resource, onOpen }: { resource: Resource; onOpen: () => 
         <div className="rounded-md bg-panel px-3 py-2 font-mono text-[13px]">热度 {resource.heat_score.toFixed(1)}</div>
       </div>
       <p className="mt-3 break-words text-[14px] leading-6 text-muted">{resource.summary}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {(resource.tags ?? []).map((tag) => <span key={tag} className="rounded bg-panel px-2 py-1 text-[12px] text-muted">#{tag}</span>)}
+        <span className="rounded bg-panel px-2 py-1 text-[12px] text-muted">{resource.estimated_minutes} 分钟</span>
+      </div>
       {resource.original_url && <p className="mt-2 break-all text-[12px] text-cold">{resource.original_url}</p>}
     </button>
   );

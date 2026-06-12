@@ -14,8 +14,10 @@ from app.models import (
     ResourceChunk,
     ResourceHeatSignal,
     ResourceStatus,
+    ResourceTag,
     ReviewItem,
     StoredFile,
+    Tag,
     Task,
 )
 
@@ -47,7 +49,42 @@ def infer_resource_type(file_name: str | None = None, content_type: str | None =
     return "mixed"
 
 
-def serialize_resource(resource: Resource) -> dict:
+def parse_tags(value: str | None) -> list[str]:
+    if not value:
+        return []
+    raw_items = value.replace(",", " ").replace("，", " ").split()
+    seen: set[str] = set()
+    tags: list[str] = []
+    for item in raw_items:
+        name = item.strip().lstrip("#")
+        if name and name not in seen:
+            seen.add(name)
+            tags.append(name)
+    return tags
+
+
+def get_resource_tags(db: Session, resource_id: UUID) -> list[str]:
+    stmt = (
+        select(Tag.name)
+        .join(ResourceTag, ResourceTag.tag_id == Tag.id)
+        .where(ResourceTag.resource_id == resource_id)
+        .order_by(Tag.name.asc())
+    )
+    return list(db.scalars(stmt).all())
+
+
+def set_resource_tags(db: Session, user_id: UUID, resource_id: UUID, value: str | None) -> None:
+    db.query(ResourceTag).filter(ResourceTag.resource_id == resource_id).delete()
+    for name in parse_tags(value):
+        tag = db.scalars(select(Tag).where(Tag.user_id == user_id, Tag.name == name).limit(1)).first()
+        if not tag:
+            tag = Tag(user_id=user_id, name=name)
+            db.add(tag)
+            db.flush()
+        db.add(ResourceTag(resource_id=resource_id, tag_id=tag.id))
+
+
+def serialize_resource(resource: Resource, db: Session | None = None) -> dict:
     estimated = resource.duration // 180 if resource.duration else 20
     return {
         "id": str(resource.id),
@@ -59,6 +96,7 @@ def serialize_resource(resource: Resource) -> dict:
         "original_url": resource.original_url,
         "file_url": resource.file_url,
         "summary": resource.summary,
+        "tags": get_resource_tags(db, resource.id) if db else [],
         "heat_score": resource.heat_score,
         "estimated_minutes": max(10, min(90, estimated)),
         "created_at": resource.created_at.isoformat(),
@@ -137,6 +175,7 @@ def create_resource(db: Session, user_id: UUID, payload) -> Resource:
     )
     db.add(resource)
     db.flush()
+    set_resource_tags(db, user_id, resource.id, None)
     db.add(ResourceChunk(resource_id=resource.id, chunk_index=0, chunk_type="summary", content=resource.summary or resource.title))
     db.commit()
     db.refresh(resource)
@@ -165,6 +204,7 @@ def create_capture(db: Session, user_id: UUID, payload) -> Resource:
     )
     db.add(resource)
     db.flush()
+    set_resource_tags(db, user_id, resource.id, payload.tags)
     db.add(ResourceChunk(resource_id=resource.id, chunk_index=0, chunk_type="paragraph", content=content, heading="采集内容"))
     db.add(
         Note(
@@ -260,7 +300,7 @@ def resource_detail(db: Session, resource: Resource) -> dict:
     files = db.scalars(select(StoredFile).where(StoredFile.resource_id == resource.id).order_by(StoredFile.created_at.desc())).all()
     tasks = db.scalars(select(Task).where(Task.resource_id == resource.id).order_by(*task_order())).all()
     return {
-        "resource": serialize_resource(resource),
+        "resource": serialize_resource(resource, db),
         "notes": [serialize_note(note) for note in notes],
         "chunks": [serialize_chunk(chunk) for chunk in chunks],
         "files": [serialize_file(file) for file in files],
@@ -273,6 +313,16 @@ def search_all(db: Session, user_id: UUID, q: str) -> list[dict]:
     resources = db.scalars(
         select(Resource).where(Resource.user_id == user_id, or_(Resource.title.ilike(pattern), Resource.summary.ilike(pattern))).limit(15)
     ).all()
+    tagged_resource_ids = db.scalars(
+        select(ResourceTag.resource_id)
+        .join(Tag, Tag.id == ResourceTag.tag_id)
+        .where(Tag.user_id == user_id, Tag.name.ilike(pattern))
+        .limit(15)
+    ).all()
+    if tagged_resource_ids:
+        tagged_resources = db.scalars(select(Resource).where(Resource.id.in_(tagged_resource_ids))).all()
+        existing_ids = {item.id for item in resources}
+        resources.extend([item for item in tagged_resources if item.id not in existing_ids])
     chunks = db.scalars(select(ResourceChunk).where(ResourceChunk.content.ilike(pattern)).limit(15)).all()
     notes = db.scalars(select(Note).where(Note.user_id == user_id, or_(Note.title.ilike(pattern), Note.content.ilike(pattern))).limit(15)).all()
 

@@ -46,6 +46,10 @@ class ResourceUpdate(BaseModel):
     summary: str | None = None
     type: str | None = None
     source_platform: str | None = None
+    original_url: str | None = None
+    tags: str | None = None
+    estimated_minutes: int | None = None
+    priority: int | None = None
 
 
 class ResourceOut(BaseModel):

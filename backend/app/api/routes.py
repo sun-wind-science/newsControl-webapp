@@ -39,6 +39,7 @@ from app.services.resources import (
     serialize_note,
     serialize_resource,
     serialize_task,
+    set_resource_tags,
     task_order,
     touch_resource,
 )
@@ -88,7 +89,7 @@ def add_resource(payload: ResourceCreate, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail="请输入内容")
     user = local_user(db)
     resource = create_resource(db, user.id, payload)
-    return ok(serialize_resource(resource), "资源已进入 Inbox")
+    return ok(serialize_resource(resource, db), "资源已进入 Inbox")
 
 
 @router.get("/resources")
@@ -100,14 +101,14 @@ def list_resources(status: str | None = None, resource_type: str | None = None, 
     if resource_type and resource_type != "all":
         stmt = stmt.where(Resource.type == resource_type)
     resources = db.scalars(stmt).all()
-    return ok([serialize_resource(item) for item in resources])
+    return ok([serialize_resource(item, db) for item in resources])
 
 
 @router.get("/resources/cold")
 def list_cold_resources(db: Session = Depends(get_db)):
     user = local_user(db)
     resources = db.scalars(select(Resource).where(Resource.user_id == user.id, Resource.decay_status.in_([DecayStatus.cold, DecayStatus.decaying]))).all()
-    return ok([serialize_resource(item) for item in resources])
+    return ok([serialize_resource(item, db) for item in resources])
 
 
 @router.get("/resources/{resource_id}")
@@ -124,11 +125,20 @@ def update_resource(resource_id: UUID, payload: ResourceUpdate, db: Session = De
     user = local_user(db)
     resource = owned_resource(db, user.id, resource_id)
     for key, value in payload.model_dump(exclude_unset=True).items():
+        if key == "tags":
+            set_resource_tags(db, user.id, resource.id, value)
+            continue
+        if key == "estimated_minutes":
+            resource.duration = max(1, int(value)) * 180 if value is not None else resource.duration
+            continue
+        if key == "priority":
+            resource.heat_score = float(value) if value is not None else resource.heat_score
+            continue
         if value is not None:
             setattr(resource, key, value)
     touch_resource(db, resource, "edit", 0.8)
     db.commit()
-    return ok(serialize_resource(resource), "资源已更新")
+    return ok(serialize_resource(resource, db), "资源已更新")
 
 
 @router.delete("/resources/{resource_id}")
@@ -148,7 +158,7 @@ def archive_resource(resource_id: UUID, db: Session = Depends(get_db)):
     resource.status = ResourceStatus.archived
     resource.archived_at = datetime.now(UTC)
     db.commit()
-    return ok(serialize_resource(resource), "资源已归档")
+    return ok(serialize_resource(resource, db), "资源已归档")
 
 
 @router.post("/resources/{resource_id}/discard")
@@ -162,7 +172,7 @@ def touch(resource_id: UUID, db: Session = Depends(get_db)):
     resource = owned_resource(db, user.id, resource_id)
     touch_resource(db, resource)
     db.commit()
-    return ok(serialize_resource(resource), "热度已更新")
+    return ok(serialize_resource(resource, db), "热度已更新")
 
 
 @router.post("/resources/{resource_id}/confirm")
@@ -172,7 +182,7 @@ def confirm_resource(resource_id: UUID, db: Session = Depends(get_db)):
     resource.status = ResourceStatus.inbox
     touch_resource(db, resource, "confirm", 1)
     db.commit()
-    return ok(serialize_resource(resource), "录入信息已确认")
+    return ok(serialize_resource(resource, db), "录入信息已确认")
 
 
 @router.post("/resources/{resource_id}/plan")
@@ -233,7 +243,7 @@ def complete_resource_process(resource_id: UUID, db: Session = Depends(get_db)):
         )
     )
     db.commit()
-    return ok(serialize_resource(resource), "处理完成，已安排复习")
+    return ok(serialize_resource(resource, db), "处理完成，已安排复习")
 
 
 @router.get("/inbox/next")
@@ -257,7 +267,7 @@ def inbox_defer(resource_id: UUID, db: Session = Depends(get_db)):
     resource = owned_resource(db, user.id, resource_id)
     resource.last_touched_at = datetime.now(UTC) + timedelta(days=1)
     db.commit()
-    return ok(serialize_resource(resource), "已延后 24 小时")
+    return ok(serialize_resource(resource, db), "已延后 24 小时")
 
 
 @router.post("/resources/{resource_id}/summarize")
