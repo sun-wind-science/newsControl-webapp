@@ -414,14 +414,25 @@ function CaptureConfirmCard({ detail, navigate, showToast }: { detail: ResourceD
 
 function InboxView({ navigate, showToast }: { navigate: (view: string, id?: string) => void; showToast: (message: string) => void }) {
   const qc = useQueryClient();
+  const { setSelectedTaskId } = useAppStore();
   const [minutes, setMinutes] = useState(30);
   const { data: detail, isLoading } = useQuery({ queryKey: ["inbox-next"], queryFn: api.nextInbox, placeholderData: keepPreviousData });
   const resource = detail?.resource;
   const decide = useMutation({
     mutationFn: (payload: { keep: boolean; purpose: string }) => api.decideInbox(resource!.id, { ...payload, estimated_minutes: minutes }),
-    onSuccess: async (_, payload) => {
+    onSuccess: async (result, payload) => {
       await qc.invalidateQueries();
-      showToast(payload.keep ? "已生成处理任务" : "资源已删除");
+      if (!payload.keep) {
+        showToast("资源已放弃");
+        return;
+      }
+      if (payload.purpose === "reference") {
+        showToast("已作为参考资料留存");
+        return;
+      }
+      setSelectedTaskId(result.task_id);
+      showToast("已生成处理任务，进入处理台");
+      navigate("processing");
     }
   });
   const defer = useMutation({
