@@ -420,6 +420,14 @@ function InboxView({ navigate, showToast }: { navigate: (view: string, id?: stri
       showToast(payload.keep ? "已生成处理任务" : "资源已删除");
     }
   });
+  const defer = useMutation({
+    mutationFn: () => api.deferInbox(resource!.id),
+    onSuccess: async () => {
+      await qc.invalidateQueries();
+      showToast("已延后 24 小时");
+    },
+    onError: (error) => showToast(error instanceof Error ? error.message : "延后失败")
+  });
   if (isLoading && !detail) return <Loading />;
   if (!resource) return <Empty title="Inbox 已清空" action="继续从工作台采集新资源。" />;
   return (
@@ -433,10 +441,11 @@ function InboxView({ navigate, showToast }: { navigate: (view: string, id?: stri
           <option value={30}>30 分钟深处理</option>
           <option value={60}>1 小时+</option>
         </select>
-        <div className="grid gap-3 sm:grid-cols-4">
+        <div className="grid gap-3 sm:grid-cols-5">
           <button onClick={() => decide.mutate({ keep: true, purpose: "active_learning" })} className="rounded-md bg-success px-4 py-3 text-white">留下并处理</button>
           <button onClick={() => decide.mutate({ keep: true, purpose: "reference" })} className="rounded-md border border-line px-4 py-3">只作参考</button>
           <button onClick={() => navigate("resource", resource.id)} className="rounded-md border border-line px-4 py-3">先批注</button>
+          <button onClick={() => defer.mutate()} className="rounded-md border border-line px-4 py-3">延后 24h</button>
           <button onClick={() => decide.mutate({ keep: false, purpose: "discard" })} className="rounded-md border border-danger px-4 py-3 text-danger">删除</button>
         </div>
       </div>
@@ -524,6 +533,22 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
     },
     onError: (error) => showToast(error instanceof Error ? error.message : "生成处理任务失败")
   });
+  const archive = useMutation({
+    mutationFn: () => api.archiveResource(resourceId),
+    onSuccess: async () => {
+      await qc.invalidateQueries();
+      showToast("资源已归档");
+    },
+    onError: (error) => showToast(error instanceof Error ? error.message : "归档失败")
+  });
+  const discard = useMutation({
+    mutationFn: () => api.discardResource(resourceId),
+    onSuccess: async () => {
+      await qc.invalidateQueries();
+      showToast("资源已放弃");
+    },
+    onError: (error) => showToast(error instanceof Error ? error.message : "放弃失败")
+  });
   const summarize = useMutation({
     mutationFn: () => api.summarize(resourceId),
     onSuccess: async () => {
@@ -592,6 +617,10 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
         <div className="mt-2 grid grid-cols-2 gap-2">
           <button onClick={() => summarize.mutate()} className="rounded-md border border-line px-3 py-2 text-[13px] hover:bg-panel">摘要草稿</button>
           <button onClick={() => generateAnki.mutate()} className="rounded-md border border-line px-3 py-2 text-[13px] hover:bg-panel">Anki 草稿</button>
+        </div>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button onClick={() => archive.mutate()} className="rounded-md border border-line px-3 py-2 text-[13px] hover:bg-panel">归档</button>
+          <button onClick={() => discard.mutate()} className="rounded-md border border-danger px-3 py-2 text-[13px] text-danger hover:bg-panel">放弃</button>
         </div>
         {data.files[0] && <a className="mt-3 block rounded-md border border-line px-3 py-2 text-[14px] hover:bg-panel" href={data.files[0].download_url} target="_blank">打开/下载文件</a>}
         {data.files[0] && (

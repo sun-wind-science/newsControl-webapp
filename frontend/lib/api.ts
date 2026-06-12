@@ -127,6 +127,8 @@ export const api = {
   resourceDetail: (id: string) => request<ResourceDetail>(`/resources/${id}`),
   updateResource: (id: string, payload: Partial<Pick<Resource, "title" | "summary" | "status" | "type" | "source_platform" | "original_url" | "estimated_minutes" | "heat_score">> & { tags?: string; priority?: number }) =>
     request<Resource>(`/resources/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  archiveResource: (id: string) => request<Resource>(`/resources/${id}/archive`, { method: "POST", body: "{}" }),
+  discardResource: (id: string) => request<{ id: string }>(`/resources/${id}/discard`, { method: "POST", body: "{}" }),
   createAnnotation: (id: string, payload: { note_type: string; content: string; source_range?: string; title?: string }) =>
     request<Note>(`/resources/${id}/annotations`, { method: "POST", body: JSON.stringify(payload) }),
   completeResourceProcess: (id: string) => request<Resource>(`/resources/${id}/process/complete`, { method: "POST", body: "{}" }),
