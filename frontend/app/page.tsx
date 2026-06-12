@@ -219,6 +219,10 @@ function CapturePanel({ navigate, showToast }: { navigate: (view: string, id?: s
     mutationFn: () => api.capture({ content, capture_type: mode === "link" ? "webpage" : "text", title, summary, process_goal: goal, estimated_minutes: minutes, priority, tags, next_action: "triage" }),
     onSuccess: async (detail) => {
       setPendingDetail(detail);
+      setContent("");
+      setTitle("");
+      setSummary("");
+      setTags("");
       await qc.invalidateQueries();
       showToast("已采集，请确认保存原因和处理计划");
     },
@@ -323,7 +327,7 @@ function CapturePanel({ navigate, showToast }: { navigate: (view: string, id?: s
         </form>
       )}
 
-      {pendingDetail && <CaptureConfirmCard detail={pendingDetail} navigate={navigate} showToast={showToast} />}
+      {pendingDetail && <CaptureConfirmCard key={pendingDetail.resource.id} detail={pendingDetail} navigate={navigate} showToast={showToast} />}
     </section>
   );
 }
