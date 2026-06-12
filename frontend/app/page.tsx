@@ -120,7 +120,7 @@ function Shell() {
           {activeView === "dashboard" && <Dashboard navigate={navigate} showToast={showToast} />}
           {activeView === "inbox" && <InboxView navigate={navigate} showToast={showToast} />}
           {activeView === "resources" && <ResourceLibrary navigate={navigate} />}
-          {activeView === "resource" && selectedResourceId && <ResourceDetailView resourceId={selectedResourceId} showToast={showToast} />}
+          {activeView === "resource" && selectedResourceId && <ResourceDetailView key={selectedResourceId} resourceId={selectedResourceId} showToast={showToast} />}
           {activeView === "processing" && <ProcessingDesk navigate={navigate} showToast={showToast} />}
           {activeView === "projects" && <ProjectsView showToast={showToast} />}
           {activeView === "review" && <ReviewView showToast={showToast} />}
