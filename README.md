@@ -36,6 +36,19 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
+如果 `8000` 被旧进程占用，可以改用其他端口，例如：
+
+```bash
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8001
+```
+
+并在启动前端前设置：
+
+```bash
+$env:BACKEND_HOSTPORT="localhost:8001"
+$env:SERVER_API_BASE_URL="http://localhost:8001"
+```
+
 4. 启动前端：
 
 ```bash
@@ -46,16 +59,33 @@ npm run dev
 
 浏览器打开 `http://localhost:3000`。
 
+也可以用本仓库的本地脚本启动：
+
+```powershell
+.\scripts\start-local.ps1
+```
+
+当 8000 端口异常时：
+
+```powershell
+.\scripts\start-local.ps1 -BackendPort 8001
+```
+
 ## 已实现的 MVP 主路径
 
-- 顶部全局采集栏：链接、文章片段、资源标题快速入库
-- Dashboard：今日能量状态、任务统计、快捷入口
-- Inbox：单卡三步快判，留下/删除、用途选择、处理时长确认
-- 资源总库：按状态边线显示资源
-- 处理台：锁定单任务，生成 AI 摘要草稿、生成 Anki 草稿、完成任务
+- 统一采集入口：链接、文本、PDF、Word、TXT/Markdown、视频文件
+- 链接采集：尝试抓取网页标题、站点名、描述和正文片段，失败时仍可手动确认
+- 文件采集：PDF/Word/TXT/Markdown 提取文本，视频保存并在详情页播放
+- 录入确认卡：补标题、保存原因、标签、预计处理时间、优先级，并直接快判
+- Dashboard：今日入库、今日处理、待处理、复习、积压统计和快捷入口
+- Inbox：单卡快判，留下并处理、只作参考、先批注、删除
+- 资源库：按类型、状态、关键词筛选，卡片显示保存原因、标签、预计处理时间
+- 资源详情：桌面三栏，移动端内容/批注/信息/输出 tabs，可编辑资源信息和批注
+- 处理台：锁定单任务，阅读/观看资源，保存处理输出，完成后生成复习项
+- 输出草稿：本地 mock 摘要草稿、Anki 草稿，默认需要人工确认
 - 项目空间：极简创建项目
 - 复习页：主动复述与熟悉度记录
-- 搜索页：关键词搜索资源和内容片段
+- 搜索页：关键词搜索标题、保存原因、标签、正文片段和批注
 - 后端统一返回格式：`{success, data, message}`
 - Alembic 迁移入口与 `.env.example`
 
