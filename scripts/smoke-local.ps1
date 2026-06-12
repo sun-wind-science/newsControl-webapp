@@ -100,6 +100,30 @@ Assert-True $defer.success "defer failed"
 $nextInbox = Invoke-RestMethod -Method Get -Uri "$ApiBase/inbox/next"
 Assert-True (($null -eq $nextInbox.data) -or ($nextInbox.data.resource.id -ne $deferId)) "deferred resource is still returned by inbox next"
 
+$archiveCapture = Post-Json "$ApiBase/capture" @{
+  content = "smoke archive task resource"
+  capture_type = "text"
+  title = "smoke-archive-task-resource"
+  summary = "verify archive closes pending task"
+  process_goal = "learning"
+  estimated_minutes = 10
+  priority = 3
+  tags = "smoke archive"
+  next_action = "triage"
+}
+$archiveId = $archiveCapture.data.resource.id
+$archiveDecision = Post-Json "$ApiBase/inbox/$archiveId/decide" @{
+  keep = $true
+  purpose = "active_learning"
+  estimated_minutes = 10
+}
+Assert-True ([bool]$archiveDecision.data.task_id) "archive smoke task was not created"
+$archive = Invoke-RestMethod -Method Post -Uri "$ApiBase/resources/$archiveId/archive" -ContentType "application/json; charset=utf-8" -Body "{}"
+Assert-True ($archive.data.status -eq "archived") "archive failed"
+$tasksAfterArchive = Invoke-RestMethod -Method Get -Uri "$ApiBase/tasks"
+$stillVisible = @($tasksAfterArchive.data | Where-Object { $_.id -eq $archiveDecision.data.task_id }).Count -gt 0
+Assert-True (-not $stillVisible) "archived resource task is still visible"
+
 $backendPython = Join-Path (Split-Path -Parent $PSScriptRoot) "backend\.venv\Scripts\python.exe"
 $pdfPath = Join-Path $env:TEMP "content-digest-smoke-blank.pdf"
 if (Test-Path $backendPython) {

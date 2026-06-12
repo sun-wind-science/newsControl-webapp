@@ -60,6 +60,18 @@ def owned_resource(db: Session, user_id: UUID, resource_id: UUID) -> Resource:
     return resource
 
 
+def close_open_tasks_for_resource(db: Session, resource_id: UUID) -> None:
+    tasks = db.scalars(
+        select(Task).where(
+            Task.resource_id == resource_id,
+            Task.status.in_([TaskStatus.pending, TaskStatus.in_progress]),
+        )
+    ).all()
+    for task in tasks:
+        task.status = TaskStatus.skipped
+        task.completed_at = datetime.now(UTC)
+
+
 @router.get("/health")
 def health():
     return ok({"status": "ok"}, "操作成功")
@@ -147,6 +159,7 @@ def delete_resource(resource_id: UUID, db: Session = Depends(get_db)):
     resource = owned_resource(db, user.id, resource_id)
     resource.status = ResourceStatus.discarded
     resource.decay_status = DecayStatus.discarded
+    close_open_tasks_for_resource(db, resource.id)
     db.commit()
     return ok({"id": str(resource.id)}, "资源已放弃")
 
@@ -157,6 +170,7 @@ def archive_resource(resource_id: UUID, db: Session = Depends(get_db)):
     resource = owned_resource(db, user.id, resource_id)
     resource.status = ResourceStatus.archived
     resource.archived_at = datetime.now(UTC)
+    close_open_tasks_for_resource(db, resource.id)
     db.commit()
     return ok(serialize_resource(resource, db), "资源已归档")
 
@@ -317,7 +331,11 @@ def generate_anki(resource_id: UUID, db: Session = Depends(get_db)):
 @router.get("/tasks")
 def list_tasks(db: Session = Depends(get_db)):
     user = local_user(db)
-    tasks = db.scalars(select(Task).where(Task.user_id == user.id).order_by(*task_order())).all()
+    tasks = db.scalars(
+        select(Task)
+        .where(Task.user_id == user.id, Task.status.in_([TaskStatus.pending, TaskStatus.in_progress]))
+        .order_by(*task_order())
+    ).all()
     return ok([serialize_task(task) for task in tasks])
 
 
