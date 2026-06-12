@@ -13,6 +13,7 @@ export type Resource = {
   source_platform?: string;
   original_url?: string;
   file_url?: string;
+  source_description?: string;
   summary?: string;
   tags: string[];
   heat_score: number;

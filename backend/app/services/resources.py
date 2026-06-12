@@ -13,12 +13,14 @@ from app.models import (
     Resource,
     ResourceChunk,
     ResourceHeatSignal,
+    ResourceMetadata,
     ResourceStatus,
     ResourceTag,
     ReviewItem,
     StoredFile,
     Tag,
     Task,
+    TaskStatus,
 )
 
 
@@ -31,6 +33,56 @@ def summarize_url(value: str) -> str:
         return f"{parsed.netloc}/{path}" if path else parsed.netloc
     except Exception:
         return value[:80]
+
+
+def fetch_webpage_metadata(url: str) -> dict:
+    try:
+        from urllib.parse import urlparse
+
+        import httpx
+        from bs4 import BeautifulSoup
+
+        response = httpx.get(
+            url,
+            follow_redirects=True,
+            timeout=6,
+            headers={"User-Agent": "ContentDigestBot/0.1 (+local personal archive)"},
+        )
+        response.raise_for_status()
+        html = response.text
+        soup = BeautifulSoup(html, "html.parser")
+
+        def meta_value(*selectors: tuple[str, str]) -> str:
+            for attr, value in selectors:
+                found = soup.find("meta", attrs={attr: value})
+                content = found.get("content") if found else ""
+                if content:
+                    return str(content).strip()
+            return ""
+
+        title = meta_value(("property", "og:title"), ("name", "twitter:title")) or (soup.title.string.strip() if soup.title and soup.title.string else "")
+        description = meta_value(("property", "og:description"), ("name", "description"), ("name", "twitter:description"))
+        site_name = meta_value(("property", "og:site_name")) or urlparse(str(response.url)).netloc
+
+        readable_text = ""
+        try:
+            from readability import Document
+
+            doc = Document(html)
+            readable_html = doc.summary(html_partial=True)
+            readable_text = BeautifulSoup(readable_html, "html.parser").get_text("\n", strip=True)
+        except Exception:
+            readable_text = soup.get_text("\n", strip=True)
+
+        return {
+            "title": title[:500],
+            "description": description[:2000],
+            "site_name": site_name[:120],
+            "text": readable_text[:16000],
+            "final_url": str(response.url),
+        }
+    except Exception:
+        return {}
 
 
 def infer_resource_type(file_name: str | None = None, content_type: str | None = None, explicit: str | None = None) -> str:
@@ -86,6 +138,7 @@ def set_resource_tags(db: Session, user_id: UUID, resource_id: UUID, value: str 
 
 def serialize_resource(resource: Resource, db: Session | None = None) -> dict:
     estimated = resource.duration // 180 if resource.duration else 20
+    metadata = db.scalars(select(ResourceMetadata).where(ResourceMetadata.resource_id == resource.id).limit(1)).first() if db else None
     return {
         "id": str(resource.id),
         "title": resource.title,
@@ -95,6 +148,7 @@ def serialize_resource(resource: Resource, db: Session | None = None) -> dict:
         "source_platform": resource.source_platform,
         "original_url": resource.original_url,
         "file_url": resource.file_url,
+        "source_description": metadata.description if metadata else None,
         "summary": resource.summary,
         "tags": get_resource_tags(db, resource.id) if db else [],
         "heat_score": resource.heat_score,
@@ -185,19 +239,21 @@ def create_resource(db: Session, user_id: UUID, payload) -> Resource:
 def create_capture(db: Session, user_id: UUID, payload) -> Resource:
     content = payload.content.strip()
     is_url = content.startswith("http://") or content.startswith("https://")
+    metadata = fetch_webpage_metadata(content) if is_url else {}
     title = (payload.title or "").strip()
     if not title:
-      title = summarize_url(content) if is_url else content[:60]
+      title = metadata.get("title") or (summarize_url(content) if is_url else content[:60])
     summary = (payload.summary or "").strip()
     if not summary:
-        summary = "请补充：为什么保存它？后续要如何处理？"
+        source_description = metadata.get("description")
+        summary = f"来源描述：{source_description}\n保存原因：请补充为什么保存它、后续要如何处理。" if source_description else "请补充：为什么保存它？后续要如何处理？"
 
     resource = Resource(
         user_id=user_id,
         title=title,
         type="webpage" if is_url else payload.capture_type,
-        original_url=content if is_url else None,
-        source_platform=payload.source_platform or ("链接采集" if is_url else "手动录入"),
+        original_url=metadata.get("final_url") or (content if is_url else None),
+        source_platform=payload.source_platform or (metadata.get("site_name") if is_url else "手动录入") or "链接采集",
         summary=summary,
         duration=payload.estimated_minutes * 180,
         heat_score=float(payload.priority),
@@ -205,7 +261,17 @@ def create_capture(db: Session, user_id: UUID, payload) -> Resource:
     db.add(resource)
     db.flush()
     set_resource_tags(db, user_id, resource.id, payload.tags)
-    db.add(ResourceChunk(resource_id=resource.id, chunk_index=0, chunk_type="paragraph", content=content, heading="采集内容"))
+    if is_url and metadata:
+        db.add(
+            ResourceMetadata(
+                resource_id=resource.id,
+                platform=metadata.get("site_name"),
+                description=metadata.get("description"),
+                raw_metadata_json={key: value for key, value in metadata.items() if key != "text"},
+            )
+        )
+    chunk_content = metadata.get("text") if is_url and metadata.get("text") else content
+    db.add(ResourceChunk(resource_id=resource.id, chunk_index=0, chunk_type="webpage_text" if is_url else "paragraph", content=chunk_content, heading="网页正文" if is_url and metadata.get("text") else "采集内容"))
     db.add(
         Note(
             user_id=user_id,
@@ -242,6 +308,20 @@ def decide_inbox(db: Session, resource: Resource, keep: bool, purpose: str, esti
         )
         db.commit()
         return None
+
+    existing_task = db.scalars(
+        select(Task)
+        .where(Task.resource_id == resource.id, Task.status.in_([TaskStatus.pending, TaskStatus.in_progress]))
+        .order_by(*task_order())
+        .limit(1)
+    ).first()
+    if existing_task:
+        resource.status = ResourceStatus.to_process if purpose == "active_learning" else ResourceStatus.to_preview
+        existing_task.estimated_minutes = estimated_minutes
+        existing_task.priority = max(existing_task.priority, 4 if estimated_minutes >= 30 else 3)
+        db.commit()
+        db.refresh(existing_task)
+        return existing_task
 
     status = ResourceStatus.to_process if purpose == "active_learning" else ResourceStatus.to_preview
     resource.status = status
@@ -319,10 +399,17 @@ def search_all(db: Session, user_id: UUID, q: str) -> list[dict]:
         .where(Tag.user_id == user_id, Tag.name.ilike(pattern))
         .limit(15)
     ).all()
-    if tagged_resource_ids:
-        tagged_resources = db.scalars(select(Resource).where(Resource.id.in_(tagged_resource_ids))).all()
+    metadata_resource_ids = db.scalars(
+        select(ResourceMetadata.resource_id)
+        .join(Resource, Resource.id == ResourceMetadata.resource_id)
+        .where(Resource.user_id == user_id, ResourceMetadata.description.ilike(pattern))
+        .limit(15)
+    ).all()
+    related_ids = list(tagged_resource_ids) + list(metadata_resource_ids)
+    if related_ids:
+        related_resources = db.scalars(select(Resource).where(Resource.id.in_(related_ids))).all()
         existing_ids = {item.id for item in resources}
-        resources.extend([item for item in tagged_resources if item.id not in existing_ids])
+        resources.extend([item for item in related_resources if item.id not in existing_ids])
     chunks = db.scalars(select(ResourceChunk).where(ResourceChunk.content.ilike(pattern)).limit(15)).all()
     notes = db.scalars(select(Note).where(Note.user_id == user_id, or_(Note.title.ilike(pattern), Note.content.ilike(pattern))).limit(15)).all()
 

@@ -212,6 +212,8 @@ function CapturePanel({ navigate, showToast }: { navigate: (view: string, id?: s
   const [priority, setPriority] = useState(3);
   const [tags, setTags] = useState("");
   const [pendingDetail, setPendingDetail] = useState<ResourceDetail | null>(null);
+  const [dragActive, setDragActive] = useState(false);
+  const [uploadingFileName, setUploadingFileName] = useState("");
 
   const capture = useMutation({
     mutationFn: () => api.capture({ content, capture_type: mode === "link" ? "webpage" : "text", title, summary, process_goal: goal, estimated_minutes: minutes, priority, tags, next_action: "triage" }),
@@ -226,12 +228,22 @@ function CapturePanel({ navigate, showToast }: { navigate: (view: string, id?: s
   const upload = useMutation({
     mutationFn: (file: File) => api.uploadFile(file),
     onSuccess: async (detail) => {
+      setUploadingFileName("");
       setPendingDetail(detail);
       await qc.invalidateQueries();
       showToast("文件已上传，请补充保存原因");
     },
-    onError: (error) => showToast(error instanceof Error ? error.message : "上传失败")
+    onError: (error) => {
+      setUploadingFileName("");
+      showToast(error instanceof Error ? error.message : "上传失败");
+    }
   });
+
+  function handleFile(file?: File) {
+    if (!file) return;
+    setUploadingFileName(file.name);
+    upload.mutate(file);
+  }
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -263,11 +275,23 @@ function CapturePanel({ navigate, showToast }: { navigate: (view: string, id?: s
       </div>
 
       {mode === "file" ? (
-        <label className="flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-line bg-paper p-6 text-center hover:border-accent">
+        <label
+          className={`flex cursor-pointer flex-col items-center justify-center rounded-md border border-dashed p-6 text-center hover:border-accent ${dragActive ? "border-accent bg-white" : "border-line bg-paper"}`}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragActive(true);
+          }}
+          onDragLeave={() => setDragActive(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragActive(false);
+            handleFile(e.dataTransfer.files?.[0]);
+          }}
+        >
           <Upload className="text-accent" />
-          <span className="mt-2 font-medium">选择或拖入文件</span>
+          <span className="mt-2 font-medium">{upload.isPending ? `正在上传：${uploadingFileName}` : "选择或拖入文件"}</span>
           <span className="mt-1 text-[13px] text-muted">支持 PDF、Word、TXT、Markdown、MP4、MOV、MKV</span>
-          <input className="hidden" type="file" accept=".pdf,.doc,.docx,.txt,.md,.markdown,.mp4,.mov,.mkv,.webm" onChange={(e) => e.target.files?.[0] && upload.mutate(e.target.files[0])} />
+          <input className="hidden" type="file" accept=".pdf,.doc,.docx,.txt,.md,.markdown,.mp4,.mov,.mkv,.webm" onChange={(e) => handleFile(e.target.files?.[0])} />
         </label>
       ) : (
         <form onSubmit={submit} className="grid gap-3">
@@ -350,6 +374,12 @@ function CaptureConfirmCard({ detail, navigate, showToast }: { detail: ResourceD
         <div className="font-semibold">录入确认 + 快判</div>
         <p className="mt-1 text-[13px] text-muted">先把“这是什么、为什么保存、多久处理”补齐，再决定去向。</p>
       </div>
+      {detail.resource.source_description && (
+        <div className="mb-3 rounded-md border border-line bg-white p-3">
+          <div className="font-mono text-[12px] text-accent">网页识别描述</div>
+          <p className="mt-1 break-words text-[13px] leading-5 text-muted">{detail.resource.source_description}</p>
+        </div>
+      )}
       <div className="grid gap-3 md:grid-cols-2">
         <input value={title} onChange={(e) => setTitle(e.target.value)} className="h-11 rounded-md border border-line px-3" placeholder="标题" />
         <input value={tags} onChange={(e) => setTags(e.target.value)} className="h-11 rounded-md border border-line px-3" placeholder="标签：论文 英语 项目A" />
@@ -459,6 +489,7 @@ function ResourceLibrary({ navigate }: { navigate: (view: string, id?: string) =
 
 function ResourceDetailView({ resourceId, showToast }: { resourceId: string; showToast: (message: string) => void }) {
   const qc = useQueryClient();
+  const { setSelectedTaskId, setActiveView } = useAppStore();
   const { data, isLoading } = useQuery({ queryKey: ["resource", resourceId], queryFn: () => api.resourceDetail(resourceId), placeholderData: keepPreviousData });
   const [noteType, setNoteType] = useState("annotation");
   const [noteContent, setNoteContent] = useState("");
@@ -479,6 +510,17 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
       await qc.invalidateQueries({ queryKey: ["resource", resourceId] });
       showToast("资源已更新");
     }
+  });
+  const startProcessing = useMutation({
+    mutationFn: () => api.decideInbox(resourceId, { keep: true, purpose: "active_learning", estimated_minutes: data?.resource.estimated_minutes ?? 30 }),
+    onSuccess: async (result) => {
+      setSelectedTaskId(result.task_id);
+      await qc.invalidateQueries();
+      showToast("已生成处理任务");
+      setActiveView("processing");
+      window.history.pushState({ view: "processing" }, "", "/?view=processing");
+    },
+    onError: (error) => showToast(error instanceof Error ? error.message : "生成处理任务失败")
   });
   if (isLoading || !data) return <Loading />;
   const resource = data.resource;
@@ -512,7 +554,9 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
         </div>
         <InfoLine label="类型" value={resource.type} />
         <InfoLine label="来源" value={resource.source_platform || resource.original_url || "本地"} />
+        {resource.source_description && <InfoLine label="来源描述" value={resource.source_description} />}
         <InfoLine label="最近触碰" value={new Date(resource.last_touched_at).toLocaleString()} />
+        <button onClick={() => startProcessing.mutate()} className="mt-3 w-full rounded-md bg-ink px-3 py-2 text-[14px] text-white">送入处理台</button>
         {data.files[0] && <a className="mt-3 block rounded-md border border-line px-3 py-2 text-[14px] hover:bg-panel" href={data.files[0].download_url} target="_blank">打开/下载文件</a>}
       </aside>
       <section className="min-w-0 rounded-md border border-line bg-white p-4">
@@ -739,6 +783,7 @@ function ResourceCard({ resource, onOpen }: { resource: Resource; onOpen: () => 
         <div className="rounded-md bg-panel px-3 py-2 font-mono text-[13px]">热度 {resource.heat_score.toFixed(1)}</div>
       </div>
       <p className="mt-3 break-words text-[14px] leading-6 text-muted">{resource.summary}</p>
+      {resource.source_description && <p className="mt-2 line-clamp-2 break-words text-[13px] leading-5 text-muted">来源：{resource.source_description}</p>}
       <div className="mt-3 flex flex-wrap gap-2">
         {(resource.tags ?? []).map((tag) => <span key={tag} className="rounded bg-panel px-2 py-1 text-[12px] text-muted">#{tag}</span>)}
         <span className="rounded bg-panel px-2 py-1 text-[12px] text-muted">{resource.estimated_minutes} 分钟</span>
