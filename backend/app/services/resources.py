@@ -193,6 +193,27 @@ def serialize_file(file: StoredFile) -> dict:
     }
 
 
+def serialize_ai_output(output: AIOutput) -> dict:
+    return {
+        "id": str(output.id),
+        "output_type": output.output_type,
+        "content": output.content,
+        "verification_status": output.verification_status.value,
+        "created_at": output.created_at.isoformat(),
+    }
+
+
+def serialize_anki_card(card: AnkiCard) -> dict:
+    return {
+        "id": str(card.id),
+        "front": card.front,
+        "back": card.back,
+        "tags": card.tags,
+        "exported": card.exported,
+        "created_at": card.created_at.isoformat(),
+    }
+
+
 def serialize_chunk(chunk: ResourceChunk) -> dict:
     return {
         "id": str(chunk.id),
@@ -395,12 +416,16 @@ def resource_detail(db: Session, resource: Resource) -> dict:
     chunks = db.scalars(select(ResourceChunk).where(ResourceChunk.resource_id == resource.id).order_by(ResourceChunk.chunk_index.asc()).limit(50)).all()
     files = db.scalars(select(StoredFile).where(StoredFile.resource_id == resource.id).order_by(StoredFile.created_at.desc())).all()
     tasks = db.scalars(select(Task).where(Task.resource_id == resource.id).order_by(*task_order())).all()
+    ai_outputs = db.scalars(select(AIOutput).where(AIOutput.resource_id == resource.id).order_by(AIOutput.created_at.desc()).limit(10)).all()
+    anki_cards = db.scalars(select(AnkiCard).where(AnkiCard.resource_id == resource.id).order_by(AnkiCard.created_at.desc()).limit(10)).all()
     return {
         "resource": serialize_resource(resource, db),
         "notes": [serialize_note(note) for note in notes],
         "chunks": [serialize_chunk(chunk) for chunk in chunks],
         "files": [serialize_file(file) for file in files],
         "tasks": [serialize_task(task) for task in tasks],
+        "ai_outputs": [serialize_ai_output(output) for output in ai_outputs],
+        "anki_cards": [serialize_anki_card(card) for card in anki_cards],
     }
 
 

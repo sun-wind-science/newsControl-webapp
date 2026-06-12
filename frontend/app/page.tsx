@@ -522,6 +522,19 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
     },
     onError: (error) => showToast(error instanceof Error ? error.message : "生成处理任务失败")
   });
+  const summarize = useMutation({
+    mutationFn: () => api.summarize(resourceId),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["resource", resourceId] });
+      showToast("摘要草稿已生成，请人工确认后再使用");
+    },
+    onError: (error) => showToast(error instanceof Error ? error.message : "摘要生成失败")
+  });
+  const generateAnki = useMutation({
+    mutationFn: () => api.generateAnki(resourceId),
+    onSuccess: () => showToast("Anki 草稿卡已生成"),
+    onError: (error) => showToast(error instanceof Error ? error.message : "Anki 草稿生成失败")
+  });
   if (isLoading || !data) return <Loading />;
   const resource = data.resource;
   return (
@@ -557,7 +570,19 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
         {resource.source_description && <InfoLine label="来源描述" value={resource.source_description} />}
         <InfoLine label="最近触碰" value={new Date(resource.last_touched_at).toLocaleString()} />
         <button onClick={() => startProcessing.mutate()} className="mt-3 w-full rounded-md bg-ink px-3 py-2 text-[14px] text-white">送入处理台</button>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <button onClick={() => summarize.mutate()} className="rounded-md border border-line px-3 py-2 text-[13px] hover:bg-panel">摘要草稿</button>
+          <button onClick={() => generateAnki.mutate()} className="rounded-md border border-line px-3 py-2 text-[13px] hover:bg-panel">Anki 草稿</button>
+        </div>
         {data.files[0] && <a className="mt-3 block rounded-md border border-line px-3 py-2 text-[14px] hover:bg-panel" href={data.files[0].download_url} target="_blank">打开/下载文件</a>}
+        {data.files[0] && (
+          <div className="mt-3 rounded-md border border-line bg-paper p-3 text-[13px]">
+            <div className="font-semibold">文件信息</div>
+            <InfoLine label="文件名" value={data.files[0].file_name} />
+            <InfoLine label="格式" value={data.files[0].file_type} />
+            <InfoLine label="大小" value={formatFileSize(data.files[0].file_size)} />
+          </div>
+        )}
       </aside>
       <section className="min-w-0 rounded-md border border-line bg-white p-4">
         <div className="mb-3 flex items-center gap-2 font-semibold"><FileText size={18} /> 阅读区</div>
@@ -585,7 +610,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
             <option value="anki_candidate">Anki 候选</option>
             <option value="project_material">项目素材</option>
           </select>
-          <input value={sourceRange} onChange={(e) => setSourceRange(e.target.value)} className="h-10 rounded-md border border-line px-3" placeholder="页码/时间点/文本范围，可选" />
+          <input value={sourceRange} onChange={(e) => setSourceRange(e.target.value)} className="h-10 rounded-md border border-line px-3" placeholder={resource.type === "video" ? "时间点，如 03:20" : resource.type === "pdf" ? "页码，如 第 3 页" : "页码/时间点/文本范围，可选"} />
           <textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} className="min-h-[120px] rounded-md border border-line p-3" placeholder="写批注、问题、证据或下一步动作..." />
           <button onClick={() => annotation.mutate()} className="rounded-md bg-accent px-4 py-2 text-white">保存批注</button>
         </div>
@@ -598,6 +623,24 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
             </div>
           ))}
         </div>
+        {(data.ai_outputs.length > 0 || data.anki_cards.length > 0) && (
+          <div className="mt-5 grid gap-2">
+            <div className="font-semibold">草稿输出</div>
+            {data.ai_outputs.map((output) => (
+              <div key={output.id} className="rounded-md border border-line bg-paper p-3">
+                <div className="font-mono text-[12px] text-accent">{output.output_type} · {output.verification_status}</div>
+                <p className="mt-1 whitespace-pre-wrap break-words text-[13px] text-muted">{output.content}</p>
+              </div>
+            ))}
+            {data.anki_cards.map((card) => (
+              <div key={card.id} className="rounded-md border border-line bg-paper p-3">
+                <div className="font-mono text-[12px] text-accent">Anki 草稿</div>
+                <div className="mt-1 text-[13px] font-semibold">{card.front}</div>
+                <p className="mt-1 whitespace-pre-wrap break-words text-[13px] text-muted">{card.back}</p>
+              </div>
+            ))}
+          </div>
+        )}
       </aside>
     </div>
   );
@@ -818,6 +861,12 @@ function displayTitle(value: string) {
   } catch {
     return value;
   }
+}
+
+function formatFileSize(value: number) {
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function statName(key: string) {

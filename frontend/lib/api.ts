@@ -69,6 +69,8 @@ export type ResourceDetail = {
   chunks: ResourceChunk[];
   files: StoredFile[];
   tasks: Task[];
+  ai_outputs: Array<{ id: string; output_type: string; content: string; verification_status: string; created_at: string }>;
+  anki_cards: Array<{ id: string; front: string; back: string; tags?: string; exported: boolean; created_at: string }>;
 };
 
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
