@@ -494,6 +494,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
   const [noteType, setNoteType] = useState("annotation");
   const [noteContent, setNoteContent] = useState("");
   const [sourceRange, setSourceRange] = useState("");
+  const [detailTab, setDetailTab] = useState<"content" | "notes" | "info" | "outputs">("content");
   const annotation = useMutation({
     mutationFn: () => api.createAnnotation(resourceId, { note_type: noteType, content: noteContent, source_range: sourceRange }),
     onSuccess: async () => {
@@ -501,6 +502,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
       setSourceRange("");
       await qc.invalidateQueries({ queryKey: ["resource", resourceId] });
       showToast("批注已保存");
+      setDetailTab("notes");
     },
     onError: (error) => showToast(error instanceof Error ? error.message : "批注失败")
   });
@@ -527,19 +529,36 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["resource", resourceId] });
       showToast("摘要草稿已生成，请人工确认后再使用");
+      setDetailTab("outputs");
     },
     onError: (error) => showToast(error instanceof Error ? error.message : "摘要生成失败")
   });
   const generateAnki = useMutation({
     mutationFn: () => api.generateAnki(resourceId),
-    onSuccess: () => showToast("Anki 草稿卡已生成"),
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: ["resource", resourceId] });
+      showToast("Anki 草稿卡已生成");
+      setDetailTab("outputs");
+    },
     onError: (error) => showToast(error instanceof Error ? error.message : "Anki 草稿生成失败")
   });
   if (isLoading || !data) return <Loading />;
   const resource = data.resource;
   return (
     <div className="grid gap-4 xl:grid-cols-[280px_1fr_360px]">
-      <aside className="rounded-md border border-line bg-white p-4">
+      <div className="sticky top-0 z-20 grid grid-cols-4 gap-1 rounded-md border border-line bg-white p-1 xl:hidden">
+        {[
+          ["content", "内容"],
+          ["notes", "批注"],
+          ["info", "信息"],
+          ["outputs", "输出"]
+        ].map(([id, label]) => (
+          <button key={id} onClick={() => setDetailTab(id as typeof detailTab)} className={`rounded px-2 py-2 text-[13px] ${detailTab === id ? "bg-ink text-white" : "text-muted"}`}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <aside className={`${detailTab === "info" ? "block" : "hidden"} rounded-md border border-line bg-white p-4 xl:block`}>
         <div className="mb-3 font-semibold">资源信息</div>
         <input className="mb-2 h-10 w-full rounded-md border border-line px-3" defaultValue={resource.title} onBlur={(e) => e.target.value !== resource.title && update.mutate({ title: e.target.value })} />
         <textarea className="mb-2 min-h-[100px] w-full rounded-md border border-line p-3" defaultValue={resource.summary || ""} placeholder="为什么保存它？" onBlur={(e) => e.target.value !== resource.summary && update.mutate({ summary: e.target.value })} />
@@ -584,7 +603,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
           </div>
         )}
       </aside>
-      <section className="min-w-0 rounded-md border border-line bg-white p-4">
+      <section className={`${detailTab === "content" ? "block" : "hidden"} min-w-0 rounded-md border border-line bg-white p-4 xl:block`}>
         <div className="mb-3 flex items-center gap-2 font-semibold"><FileText size={18} /> 阅读区</div>
         {resource.type === "video" && data.files[0] ? (
           <video className="mb-4 max-h-[420px] w-full rounded-md bg-black" src={data.files[0].download_url} controls />
@@ -598,9 +617,9 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
           )) : <Empty title="暂无可预览内容" action="你仍然可以先写批注、设置处理计划。" />}
         </div>
       </section>
-      <aside className="rounded-md border border-line bg-white p-4">
+      <aside className={`${detailTab === "notes" || detailTab === "outputs" ? "block" : "hidden"} rounded-md border border-line bg-white p-4 xl:block`}>
         <div className="mb-3 font-semibold">批注与输出</div>
-        <div className="grid gap-2">
+        <div className={`${detailTab === "outputs" ? "hidden" : "grid"} gap-2 xl:grid`}>
           <select value={noteType} onChange={(e) => setNoteType(e.target.value)} className="h-10 rounded-md border border-line bg-white px-3">
             <option value="annotation">普通备注</option>
             <option value="excerpt">摘录</option>
@@ -614,7 +633,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
           <textarea value={noteContent} onChange={(e) => setNoteContent(e.target.value)} className="min-h-[120px] rounded-md border border-line p-3" placeholder="写批注、问题、证据或下一步动作..." />
           <button onClick={() => annotation.mutate()} className="rounded-md bg-accent px-4 py-2 text-white">保存批注</button>
         </div>
-        <div className="mt-4 grid gap-2">
+        <div className={`${detailTab === "outputs" ? "hidden" : "grid"} mt-4 gap-2 xl:grid`}>
           {data.notes.map((note) => (
             <div key={note.id} className="rounded-md border border-line bg-paper p-3">
               <div className="text-[13px] font-semibold">{note.title}</div>
@@ -624,7 +643,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
           ))}
         </div>
         {(data.ai_outputs.length > 0 || data.anki_cards.length > 0) && (
-          <div className="mt-5 grid gap-2">
+          <div className={`${detailTab === "notes" ? "hidden" : "grid"} mt-5 gap-2 xl:grid`}>
             <div className="font-semibold">草稿输出</div>
             {data.ai_outputs.map((output) => (
               <div key={output.id} className="rounded-md border border-line bg-paper p-3">
@@ -641,6 +660,7 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
             ))}
           </div>
         )}
+        {detailTab === "outputs" && data.ai_outputs.length === 0 && data.anki_cards.length === 0 && <Empty title="还没有输出草稿" action="先生成摘要草稿、Anki 草稿，或在处理台完成一次处理。" />}
       </aside>
     </div>
   );
