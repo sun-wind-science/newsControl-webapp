@@ -124,6 +124,27 @@ $tasksAfterArchive = Invoke-RestMethod -Method Get -Uri "$ApiBase/tasks"
 $stillVisible = @($tasksAfterArchive.data | Where-Object { $_.id -eq $archiveDecision.data.task_id }).Count -gt 0
 Assert-True (-not $stillVisible) "archived resource task is still visible"
 
+$discardCapture = Post-Json "$ApiBase/capture" @{
+  content = "smoke discard resource"
+  capture_type = "text"
+  title = "smoke-discard-resource"
+  summary = "verify discarded resource is hidden from default library"
+  process_goal = "learning"
+  estimated_minutes = 10
+  priority = 3
+  tags = "smoke discard"
+  next_action = "triage"
+}
+$discardId = $discardCapture.data.resource.id
+$discard = Invoke-RestMethod -Method Post -Uri "$ApiBase/resources/$discardId/discard" -ContentType "application/json; charset=utf-8" -Body "{}"
+Assert-True $discard.success "discard failed"
+$defaultResources = Invoke-RestMethod -Method Get -Uri "$ApiBase/resources"
+$discardInDefault = @($defaultResources.data | Where-Object { $_.id -eq $discardId }).Count -gt 0
+Assert-True (-not $discardInDefault) "discarded resource is visible in default library"
+$discardedResources = Invoke-RestMethod -Method Get -Uri "$ApiBase/resources?status=discarded"
+$discardCanBeFound = @($discardedResources.data | Where-Object { $_.id -eq $discardId }).Count -gt 0
+Assert-True $discardCanBeFound "discarded resource cannot be found by discarded filter"
+
 $backendPython = Join-Path (Split-Path -Parent $PSScriptRoot) "backend\.venv\Scripts\python.exe"
 $pdfPath = Join-Path $env:TEMP "content-digest-smoke-blank.pdf"
 if (Test-Path $backendPython) {

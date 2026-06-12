@@ -499,6 +499,7 @@ function ResourceLibrary({ navigate }: { navigate: (view: string, id?: string) =
             <option value="to_process">深处理</option>
             <option value="reviewing">复习中</option>
             <option value="archived">归档</option>
+            <option value="discarded">已放弃</option>
           </select>
           <input value={q} onChange={(e) => setQ(e.target.value)} className="h-10 min-w-0 rounded-md border border-line bg-white px-3" placeholder="筛标题、原因、标签" />
         </div>

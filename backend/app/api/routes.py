@@ -110,6 +110,8 @@ def list_resources(status: str | None = None, resource_type: str | None = None, 
     stmt = select(Resource).where(Resource.user_id == user.id).order_by(Resource.created_at.desc())
     if status:
         stmt = stmt.where(Resource.status == status)
+    else:
+        stmt = stmt.where(Resource.status != ResourceStatus.discarded)
     if resource_type and resource_type != "all":
         stmt = stmt.where(Resource.type == resource_type)
     resources = db.scalars(stmt).all()

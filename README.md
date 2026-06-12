@@ -85,7 +85,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-local.ps1
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\smoke-local.ps1 -ApiBase http://localhost:8001/api
 ```
 
-烟测覆盖：文本采集、保存原因/标签更新、Inbox 快判、延后后暂时隐藏、归档后关闭待处理任务、批注、摘要草稿、Anki 草稿、任务完成、复习项生成、搜索，以及空白 PDF 上传兜底预览。
+烟测覆盖：文本采集、保存原因/标签更新、Inbox 快判、延后后暂时隐藏、归档后关闭待处理任务、放弃后从默认资源库隐藏、批注、摘要草稿、Anki 草稿、任务完成、复习项生成、搜索，以及空白 PDF 上传兜底预览。
 
 ## 已实现的 MVP 主路径
 
