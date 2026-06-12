@@ -12,6 +12,8 @@ __pycache__/
 *.db
 work/
 outputs/
+storage/
+backend/storage/
 postgres_data/
 minio_data/
 meili_data/

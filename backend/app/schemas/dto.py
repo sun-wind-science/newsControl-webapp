@@ -19,11 +19,33 @@ class ResourceCreate(BaseModel):
         return value.strip()
 
 
+class CaptureCreate(BaseModel):
+    content: str = Field(min_length=1)
+    capture_type: str = "link"
+    title: str | None = None
+    summary: str | None = None
+    source_platform: str | None = None
+    process_goal: str = "学习"
+    estimated_minutes: int = 20
+    priority: int = 3
+    tags: str | None = None
+    next_action: str = "triage"
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("请输入内容")
+        return value.strip()
+
+
 class ResourceUpdate(BaseModel):
     title: str | None = None
     status: str | None = None
     decay_status: str | None = None
     summary: str | None = None
+    type: str | None = None
+    source_platform: str | None = None
 
 
 class ResourceOut(BaseModel):
@@ -75,7 +97,29 @@ class NoteCreate(BaseModel):
     content: str = ""
     resource_id: UUID | None = None
     project_id: UUID | None = None
-    note_type: str = "general"
+    note_type: str = "annotation"
+    source_range: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("请输入批注内容")
+        return value.strip()
+
+
+class AnnotationCreate(BaseModel):
+    note_type: str = "annotation"
+    content: str = Field(min_length=1)
+    source_range: str | None = None
+    title: str | None = None
+
+    @field_validator("content")
+    @classmethod
+    def annotation_must_not_be_blank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("请输入批注内容")
+        return value.strip()
 
 
 class SearchResult(BaseModel):

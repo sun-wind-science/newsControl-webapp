@@ -12,6 +12,7 @@ export type Resource = {
   decay_status: string;
   source_platform?: string;
   original_url?: string;
+  file_url?: string;
   summary?: string;
   heat_score: number;
   estimated_minutes: number;
@@ -29,33 +30,103 @@ export type Task = {
   resource_id?: string;
 };
 
+export type Note = {
+  id: string;
+  title: string;
+  content: string;
+  note_type: string;
+  source_range?: string;
+  created_at: string;
+};
+
+export type ResourceChunk = {
+  id: string;
+  resource_id: string;
+  chunk_index: number;
+  chunk_type: string;
+  content: string;
+  page_number?: number;
+  start_time?: number;
+  end_time?: number;
+  heading?: string;
+};
+
+export type StoredFile = {
+  id: string;
+  resource_id?: string;
+  file_name: string;
+  file_type: string;
+  file_size: number;
+  storage_path: string;
+  download_url: string;
+};
+
+export type ResourceDetail = {
+  resource: Resource;
+  notes: Note[];
+  chunks: ResourceChunk[];
+  files: StoredFile[];
+  tasks: Task[];
+};
+
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "/api";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = init?.body instanceof FormData ? init.headers : { "Content-Type": "application/json", ...(init?.headers ?? {}) };
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers ?? {})
-    },
+    headers,
     cache: "no-store"
   });
-  if (!res.ok) {
-    throw new Error(`请求失败：${res.status}`);
+  const text = await res.text();
+  let json: ApiResponse<T> | undefined;
+  try {
+    json = text ? (JSON.parse(text) as ApiResponse<T>) : undefined;
+  } catch {
+    json = undefined;
   }
-  const json = (await res.json()) as ApiResponse<T>;
-  if (!json.success) {
-    throw new Error(json.message);
+  if (!res.ok) {
+    throw new Error(json?.message || `请求失败：${res.status}`);
+  }
+  if (!json?.success) {
+    throw new Error(json?.message || "请求失败");
   }
   return json.data;
 }
 
 export const api = {
   dashboard: (mode: string) => request<any>(`/session/dashboard?energy_mode=${mode}`),
-  resources: (status?: string) => request<Resource[]>(`/resources${status ? `?status=${status}` : ""}`),
-  createResource: (payload: { title: string; type: string; original_url?: string; source_platform?: string; summary?: string }) =>
-    request<Resource>("/resources", { method: "POST", body: JSON.stringify(payload) }),
-  nextInbox: () => request<Resource | null>("/inbox/next"),
+  capture: (payload: {
+    content: string;
+    capture_type: string;
+    title?: string;
+    summary?: string;
+    source_platform?: string;
+    process_goal?: string;
+    estimated_minutes?: number;
+    priority?: number;
+    tags?: string;
+    next_action?: string;
+  }) => request<ResourceDetail>("/capture", { method: "POST", body: JSON.stringify(payload) }),
+  uploadFile: (file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<ResourceDetail>("/uploads/file", { method: "POST", body: form });
+  },
+  resources: (status?: string, resourceType?: string) => {
+    const params = new URLSearchParams();
+    if (status) params.set("status", status);
+    if (resourceType && resourceType !== "all") params.set("resource_type", resourceType);
+    const query = params.toString();
+    return request<Resource[]>(`/resources${query ? `?${query}` : ""}`);
+  },
+  resourceDetail: (id: string) => request<ResourceDetail>(`/resources/${id}`),
+  updateResource: (id: string, payload: Partial<Pick<Resource, "title" | "summary" | "status" | "type" | "source_platform">>) =>
+    request<Resource>(`/resources/${id}`, { method: "PATCH", body: JSON.stringify(payload) }),
+  createAnnotation: (id: string, payload: { note_type: string; content: string; source_range?: string; title?: string }) =>
+    request<Note>(`/resources/${id}/annotations`, { method: "POST", body: JSON.stringify(payload) }),
+  completeResourceProcess: (id: string) => request<Resource>(`/resources/${id}/process/complete`, { method: "POST", body: "{}" }),
+  nextInbox: () => request<ResourceDetail | null>("/inbox/next"),
   decideInbox: (id: string, payload: { keep: boolean; purpose: string; estimated_minutes: number }) =>
     request<{ task_id?: string }>(`/inbox/${id}/decide`, { method: "POST", body: JSON.stringify(payload) }),
   deferInbox: (id: string) => request<Resource>(`/inbox/${id}/defer`, { method: "POST", body: "{}" }),

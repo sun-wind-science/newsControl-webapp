@@ -29,7 +29,7 @@ def get_or_create_local_user(db: Session) -> User:
             type="video",
             source_platform="Bilibili",
             original_url="https://www.bilibili.com/video/example",
-            summary="待判断的视频资源，可能适合拆成章节笔记和 Anki。",
+            summary="待判断的视频资源，适合拆成章节笔记、关键片段和 Anki。",
             duration=3600,
             heat_score=3.4,
         ),
@@ -63,7 +63,7 @@ def get_or_create_local_user(db: Session) -> User:
                 chunk_index=0,
                 chunk_type="summary",
                 content=resource.summary or resource.title,
-                heading="AI 初步摘要",
+                heading="初步摘要",
             )
         )
     db.commit()
