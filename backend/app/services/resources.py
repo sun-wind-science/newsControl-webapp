@@ -363,11 +363,14 @@ def decide_inbox(db: Session, resource: Resource, keep: bool, purpose: str, esti
 
 
 def dashboard(db: Session, user_id: UUID, energy_mode: str = "focus") -> dict:
+    now = datetime.now(UTC)
     today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     stale_before = datetime.now(UTC) - timedelta(days=7)
     pending_stmt = select(Task).where(Task.user_id == user_id, Task.status == "pending").order_by(*task_order()).limit(5)
     pending_tasks = db.scalars(pending_stmt).all()
-    inbox_count = db.scalar(select(func.count()).select_from(Resource).where(Resource.user_id == user_id, Resource.status == ResourceStatus.inbox)) or 0
+    inbox_count = db.scalar(
+        select(func.count()).select_from(Resource).where(Resource.user_id == user_id, Resource.status == ResourceStatus.inbox, Resource.last_touched_at <= now)
+    ) or 0
     captured_today = db.scalar(select(func.count()).select_from(Resource).where(Resource.user_id == user_id, Resource.created_at >= today_start)) or 0
     processed_today = db.scalar(select(func.count()).select_from(Task).where(Task.user_id == user_id, Task.status == TaskStatus.done, Task.completed_at >= today_start)) or 0
     stale_count = db.scalar(

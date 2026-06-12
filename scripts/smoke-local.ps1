@@ -83,6 +83,23 @@ Assert-True ($detail.data.anki_cards.Count -ge 1) "detail missing Anki draft"
 $search = Invoke-RestMethod -Method Get -Uri "$ApiBase/search?q=regression"
 Assert-True ($search.data.Count -ge 1) "search did not hit tag or reason"
 
+$deferCapture = Post-Json "$ApiBase/capture" @{
+  content = "smoke defer resource"
+  capture_type = "text"
+  title = "smoke-defer-resource"
+  summary = "verify defer hides item from current inbox"
+  process_goal = "learning"
+  estimated_minutes = 10
+  priority = 3
+  tags = "smoke defer"
+  next_action = "triage"
+}
+$deferId = $deferCapture.data.resource.id
+$defer = Invoke-RestMethod -Method Post -Uri "$ApiBase/inbox/$deferId/defer" -ContentType "application/json; charset=utf-8" -Body "{}"
+Assert-True $defer.success "defer failed"
+$nextInbox = Invoke-RestMethod -Method Get -Uri "$ApiBase/inbox/next"
+Assert-True (($null -eq $nextInbox.data) -or ($nextInbox.data.resource.id -ne $deferId)) "deferred resource is still returned by inbox next"
+
 $backendPython = Join-Path (Split-Path -Parent $PSScriptRoot) "backend\.venv\Scripts\python.exe"
 $pdfPath = Join-Path $env:TEMP "content-digest-smoke-blank.pdf"
 if (Test-Path $backendPython) {

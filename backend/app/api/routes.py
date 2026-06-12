@@ -249,7 +249,17 @@ def complete_resource_process(resource_id: UUID, db: Session = Depends(get_db)):
 @router.get("/inbox/next")
 def inbox_next(db: Session = Depends(get_db)):
     user = local_user(db)
-    resource = db.scalars(select(Resource).where(Resource.user_id == user.id, Resource.status == ResourceStatus.inbox).order_by(Resource.created_at.asc()).limit(1)).first()
+    now = datetime.now(UTC)
+    resource = db.scalars(
+        select(Resource)
+        .where(
+            Resource.user_id == user.id,
+            Resource.status == ResourceStatus.inbox,
+            Resource.last_touched_at <= now,
+        )
+        .order_by(Resource.created_at.asc())
+        .limit(1)
+    ).first()
     return ok(resource_detail(db, resource) if resource else None)
 
 
