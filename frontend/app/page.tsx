@@ -344,6 +344,10 @@ function CaptureConfirmCard({ detail, navigate, showToast }: { detail: ResourceD
   const [saving, setSaving] = useState(false);
 
   async function saveThen(action: "detail" | "process" | "reference") {
+    if (!title.trim()) {
+      showToast("请填写标题");
+      return;
+    }
     if (!summary.trim() || summary.includes("请补充")) {
       showToast("请先写清楚为什么保存它");
       return;
@@ -536,7 +540,8 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: ["resource", resourceId] });
       showToast("资源已更新");
-    }
+    },
+    onError: (error) => showToast(error instanceof Error ? error.message : "资源更新失败")
   });
   const startProcessing = useMutation({
     mutationFn: () => api.decideInbox(resourceId, { keep: true, purpose: "active_learning", estimated_minutes: data?.resource.estimated_minutes ?? 30 }),
@@ -585,6 +590,24 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
   });
   if (isLoading || !data) return <Loading />;
   const resource = data.resource;
+  function saveTitle(value: string) {
+    const next = value.trim();
+    if (!next) {
+      showToast("标题不能为空");
+      return;
+    }
+    if (next !== resource.title) update.mutate({ title: next });
+  }
+
+  function saveSummary(value: string) {
+    const next = value.trim();
+    if (!next) {
+      showToast("请填写保存原因");
+      return;
+    }
+    if (next !== (resource.summary || "")) update.mutate({ summary: next });
+  }
+
   return (
     <div className="grid gap-4 xl:grid-cols-[280px_1fr_360px]">
       <div className="sticky top-0 z-20 grid grid-cols-4 gap-1 rounded-md border border-line bg-white p-1 xl:hidden">
@@ -601,8 +624,8 @@ function ResourceDetailView({ resourceId, showToast }: { resourceId: string; sho
       </div>
       <aside className={`${detailTab === "info" ? "block" : "hidden"} rounded-md border border-line bg-white p-4 xl:block`}>
         <div className="mb-3 font-semibold">资源信息</div>
-        <input className="mb-2 h-10 w-full rounded-md border border-line px-3" defaultValue={resource.title} onBlur={(e) => e.target.value !== resource.title && update.mutate({ title: e.target.value })} />
-        <textarea className="mb-2 min-h-[100px] w-full rounded-md border border-line p-3" defaultValue={resource.summary || ""} placeholder="为什么保存它？" onBlur={(e) => e.target.value !== resource.summary && update.mutate({ summary: e.target.value })} />
+        <input className="mb-2 h-10 w-full rounded-md border border-line px-3" defaultValue={resource.title} onBlur={(e) => saveTitle(e.target.value)} />
+        <textarea className="mb-2 min-h-[100px] w-full rounded-md border border-line p-3" defaultValue={resource.summary || ""} placeholder="为什么保存它？" onBlur={(e) => saveSummary(e.target.value)} />
         <input className="mb-2 h-10 w-full rounded-md border border-line px-3" defaultValue={(resource.tags ?? []).join(" ")} placeholder="标签，用空格分隔" onBlur={(e) => update.mutate({ tags: e.target.value })} />
         <select className="mb-2 h-10 w-full rounded-md border border-line bg-white px-3" defaultValue={resource.status} onChange={(e) => update.mutate({ status: e.target.value })}>
           <option value="inbox">Inbox 待判</option>
