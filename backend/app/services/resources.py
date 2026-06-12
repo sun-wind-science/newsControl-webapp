@@ -188,6 +188,21 @@ def decide_inbox(db: Session, resource: Resource, keep: bool, purpose: str, esti
         db.commit()
         return None
 
+    if purpose == "reference":
+        resource.status = ResourceStatus.archived
+        resource.archived_at = datetime.now(UTC)
+        db.add(
+            Note(
+                user_id=resource.user_id,
+                resource_id=resource.id,
+                title="参考存档",
+                content="已作为参考资料留存，不进入今日任务台。",
+                note_type="action",
+            )
+        )
+        db.commit()
+        return None
+
     status = ResourceStatus.to_process if purpose == "active_learning" else ResourceStatus.to_preview
     resource.status = status
     task = Task(

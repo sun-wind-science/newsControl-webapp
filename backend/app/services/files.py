@@ -55,9 +55,9 @@ def save_upload_file(db: Session, user_id: UUID, file: UploadFile) -> Resource:
         storage_path=str(target_path),
         checksum=hasher.hexdigest(),
     )
-    resource.file_url = f"/api/files/{stored.id}/download"
     db.add(stored)
     db.flush()
+    resource.file_url = f"/api/files/{stored.id}/download"
     extract_chunks(db, resource, target_path, resource_type)
     db.commit()
     db.refresh(resource)
