@@ -313,8 +313,9 @@ def list_tasks(db: Session = Depends(get_db)):
 
 @router.post("/tasks/{task_id}/complete")
 def complete_task(task_id: UUID, db: Session = Depends(get_db)):
+    user = local_user(db)
     task = db.get(Task, task_id)
-    if not task:
+    if not task or task.user_id != user.id:
         raise HTTPException(status_code=404, detail="任务不存在")
     task.status = TaskStatus.done
     task.completed_at = datetime.now(UTC)
@@ -323,6 +324,25 @@ def complete_task(task_id: UUID, db: Session = Depends(get_db)):
         if resource:
             resource.status = ResourceStatus.reviewing
             touch_resource(db, resource, "note", 2)
+            existing_review = db.scalars(
+                select(ReviewItem)
+                .where(
+                    ReviewItem.user_id == user.id,
+                    ReviewItem.resource_id == resource.id,
+                    ReviewItem.status == "pending",
+                )
+                .limit(1)
+            ).first()
+            if not existing_review:
+                db.add(
+                    ReviewItem(
+                        user_id=user.id,
+                        resource_id=resource.id,
+                        review_type="active_recall",
+                        prompt=f"复述：{resource.title} 的核心价值、一个证据点和下一步动作是什么？",
+                        next_review_at=datetime.now(UTC) + timedelta(days=1),
+                    )
+                )
     db.commit()
     return ok({"id": str(task.id)}, "任务完成，已进入复习沉淀")
 

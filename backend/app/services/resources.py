@@ -342,9 +342,22 @@ def decide_inbox(db: Session, resource: Resource, keep: bool, purpose: str, esti
 
 
 def dashboard(db: Session, user_id: UUID, energy_mode: str = "focus") -> dict:
+    today_start = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+    stale_before = datetime.now(UTC) - timedelta(days=7)
     pending_stmt = select(Task).where(Task.user_id == user_id, Task.status == "pending").order_by(*task_order()).limit(5)
     pending_tasks = db.scalars(pending_stmt).all()
     inbox_count = db.scalar(select(func.count()).select_from(Resource).where(Resource.user_id == user_id, Resource.status == ResourceStatus.inbox)) or 0
+    captured_today = db.scalar(select(func.count()).select_from(Resource).where(Resource.user_id == user_id, Resource.created_at >= today_start)) or 0
+    processed_today = db.scalar(select(func.count()).select_from(Task).where(Task.user_id == user_id, Task.status == TaskStatus.done, Task.completed_at >= today_start)) or 0
+    stale_count = db.scalar(
+        select(func.count())
+        .select_from(Resource)
+        .where(
+            Resource.user_id == user_id,
+            Resource.created_at < stale_before,
+            Resource.status.in_([ResourceStatus.inbox, ResourceStatus.to_preview, ResourceStatus.to_process]),
+        )
+    ) or 0
     ai_count = db.scalar(select(func.count()).select_from(AIOutput).where(AIOutput.user_id == user_id, AIOutput.verification_status == "draft")) or 0
     review_count = db.scalar(select(func.count()).select_from(ReviewItem).where(ReviewItem.user_id == user_id, ReviewItem.status == "pending")) or 0
     cold_count = db.scalar(
@@ -365,6 +378,9 @@ def dashboard(db: Session, user_id: UUID, energy_mode: str = "focus") -> dict:
         "stats": {
             "pending_tasks": len(pending_tasks),
             "inbox": inbox_count,
+            "captured_today": captured_today,
+            "processed_today": processed_today,
+            "stale": stale_count,
             "ai_drafts": ai_count,
             "reviews": review_count,
             "cold": cold_count,

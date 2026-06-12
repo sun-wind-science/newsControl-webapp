@@ -162,7 +162,7 @@ function Dashboard({ navigate, showToast }: { navigate: (view: string, id?: stri
       </section>
 
       <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {Object.entries(data?.stats ?? { pending_tasks: 0, inbox: 0, ai_drafts: 0, reviews: 0, cold: 0, annotated: 0 }).map(([key, value]) => (
+        {Object.entries(data?.stats ?? { pending_tasks: 0, inbox: 0, captured_today: 0, processed_today: 0, stale: 0, reviews: 0, annotated: 0 }).map(([key, value]) => (
           <div key={key} className="rounded-md border border-line bg-white p-4">
             <div className="font-mono text-[24px]">{String(value)}</div>
             <div className="mt-1 text-[13px] text-muted">{statName(key)}</div>
@@ -821,7 +821,7 @@ function displayTitle(value: string) {
 }
 
 function statName(key: string) {
-  return ({ pending_tasks: "待处理", inbox: "Inbox", ai_drafts: "AI 草稿", reviews: "复习", cold: "冷存", annotated: "已批注" }[key] ?? key);
+  return ({ pending_tasks: "待处理", inbox: "Inbox", captured_today: "今日入库", processed_today: "今日处理", stale: "积压 7 天", ai_drafts: "AI 草稿", reviews: "复习", cold: "冷存", annotated: "已批注" }[key] ?? key);
 }
 
 export default function Page() {
